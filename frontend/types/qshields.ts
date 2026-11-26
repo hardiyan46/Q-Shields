@@ -18,6 +18,8 @@ export type SeverityLevel = "CRITICAL" | "HIGH" | "MEDIUM" | "LOW";
 
 export type FindingStatus = "OPEN" | "IN_PROGRESS" | "RESOLVED" | "MANUAL_REQUIRED";
 
+export type ExecutionActionType = "REMEDIATE" | "ROLLBACK";
+
 export type JobStatus =
   | "DRAFT"
   | "PENDING_APPROVAL"
@@ -144,4 +146,49 @@ export interface RemediationJob {
   rejection_reason: string | null;
   created_at: string;
   approved_at: string | null;
+}
+
+export interface ApproveJobRequest {
+  execute_immediately?: boolean;
+}
+
+export interface RejectJobRequest {
+  rejection_reason: string;
+}
+
+export interface ExecutionLogItem {
+  id: string;
+  job_id: string;
+  action_type: ExecutionActionType;
+  triggered_by_id: string;
+  exit_code: number | null;
+  stdout: string | null;
+  stderr: string | null;
+  executed_at: string;
+}
+
+export interface EndpointBrief {
+  id: string;
+  wazuh_agent_id: string;
+  hostname: string;
+  ip_address: string | null;
+  os_family: OSFamily;
+  os_name: string;
+  os_version: string;
+  status: EndpointStatus;
+}
+
+export interface FindingBrief {
+  id: string;
+  source_type: FindingSource;
+  external_id: string;
+  title: string;
+  severity: SeverityLevel;
+  status: FindingStatus;
+}
+
+export interface RemediationJobDetail extends RemediationJob {
+  endpoint?: EndpointBrief | null;
+  finding?: FindingBrief | null;
+  execution_logs: ExecutionLogItem[];
 }

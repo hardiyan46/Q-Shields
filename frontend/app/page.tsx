@@ -1,22 +1,23 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   AlertTriangle,
+  ArrowRight,
   CheckCircle2,
   Cpu,
   Laptop,
-  LogOut,
   RefreshCw,
   Search,
   Server,
-  Shield,
   ShieldAlert,
   Sparkles,
   Terminal,
 } from "lucide-react";
 
+import { AppNavbar } from "@/components/app-navbar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -57,11 +58,11 @@ import {
   fetchEndpointDetail,
   fetchEndpoints,
   fetchFindings,
+  fetchRemediations,
   generateRemediation,
   syncWazuhData,
 } from "@/lib/api";
 import {
-  clearAuthSession,
   getAccessToken,
   getStoredUser,
   setAuthSession,
@@ -105,16 +106,11 @@ function endpointStatusClass(status: EndpointStatus): string {
   return "border-red-300 bg-red-50 text-red-700";
 }
 
-function roleBadgeClass(role: UserProfile["role"]): string {
-  if (role === "ADMIN") return "border-purple-300 bg-purple-100 text-purple-800";
-  if (role === "APPROVER") return "border-emerald-300 bg-emerald-100 text-emerald-800";
-  return "border-blue-300 bg-blue-100 text-blue-800";
-}
-
 export default function DashboardPage() {
   const router = useRouter();
   const [authChecked, setAuthChecked] = useState(false);
   const [user, setUser] = useState<UserProfile | null>(null);
+  const [pendingCount, setPendingCount] = useState(0);
 
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [allEndpoints, setAllEndpoints] = useState<EndpointItem[]>([]);
@@ -153,12 +149,14 @@ export default function DashboardPage() {
   }, [allEndpoints]);
 
   const loadDashboardOverview = useCallback(async () => {
-    const [summaryData, allEpData] = await Promise.all([
+    const [summaryData, allEpData, pendingJobs] = await Promise.all([
       fetchDashboardSummary(),
       fetchEndpoints({ limit: 200 }),
+      fetchRemediations({ status: "PENDING_APPROVAL", limit: 200 }),
     ]);
     setSummary(summaryData);
     setAllEndpoints(allEpData);
+    setPendingCount(pendingJobs.length);
   }, []);
 
   const loadFilteredEndpoints = useCallback(async () => {
@@ -299,11 +297,6 @@ export default function DashboardPage() {
     }
   }
 
-  function handleLogout() {
-    clearAuthSession();
-    router.replace("/login");
-  }
-
   if (!authChecked && isLoadingData) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
@@ -319,50 +312,16 @@ export default function DashboardPage() {
 
   return (
     <div className="min-h-screen bg-slate-50">
-      {/* Top Navbar */}
-      <header className="sticky top-0 z-30 border-b bg-white/95 backdrop-blur-sm">
-        <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-6">
-          <div className="flex items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-600 text-white">
-              <Shield className="h-5 w-5" />
-            </div>
-            <div>
-              <h1 className="text-base font-bold text-slate-900">Q-Shields</h1>
-              <p className="text-xs text-muted-foreground">
-                CVE Assessment, CIS Hardening &amp; AI Remediation
-              </p>
-            </div>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-3">
-            <Button
-              size="sm"
-              onClick={handleSyncWazuh}
-              disabled={isSyncing}
-            >
-              <RefreshCw className={`h-4 w-4 ${isSyncing ? "animate-spin" : ""}`} />
-              {isSyncing ? "Syncing..." : "Sync Wazuh Now"}
-            </Button>
-
-            {user && (
-              <div className="flex items-center gap-2 rounded-md border bg-slate-50 px-3 py-1.5 text-sm">
-                <span className="font-medium text-slate-800">{user.full_name || user.username}</span>
-                <Badge variant="outline" className="text-[11px]">
-                  {user.auth_provider}
-                </Badge>
-                <Badge variant="outline" className={roleBadgeClass(user.role)}>
-                  {user.role}
-                </Badge>
-              </div>
-            )}
-
-            <Button variant="outline" size="sm" onClick={handleLogout}>
-              <LogOut className="h-4 w-4" />
-              Logout
-            </Button>
-          </div>
-        </div>
-      </header>
+      <AppNavbar
+        user={user}
+        pendingCount={pendingCount}
+        rightSlot={
+          <Button size="sm" onClick={handleSyncWazuh} disabled={isSyncing}>
+            <RefreshCw className={`h-4 w-4 ${isSyncing ? "animate-spin" : ""}`} />
+            {isSyncing ? "Syncing..." : "Sync Wazuh Now"}
+          </Button>
+        }
+      />
 
       <main className="mx-auto max-w-7xl space-y-6 px-4 py-6 sm:px-6">
         {/* Notifications / Errors */}
@@ -406,19 +365,27 @@ export default function DashboardPage() {
         )}
 
         {generatedJobNotice && (
-          <div className="flex flex-col gap-1.5 rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900">
-            <div className="flex items-center justify-between gap-2">
+          <div className="flex flex-col gap-2 rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900">
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-2 font-semibold">
                 <Sparkles className="h-4 w-4 text-blue-600" />
                 Draft Remediasi AI Berhasil Dibuat ({generatedJobNotice.status})
               </div>
-              <button
-                type="button"
-                onClick={() => setGeneratedJobNotice(null)}
-                className="text-xs font-semibold underline"
-              >
-                Tutup
-              </button>
+              <div className="flex items-center gap-3">
+                <Button size="sm" asChild>
+                  <Link href={`/approvals?jobId=${generatedJobNotice.id}`}>
+                    Review di Approval Queue
+                    <ArrowRight className="h-3.5 w-3.5" />
+                  </Link>
+                </Button>
+                <button
+                  type="button"
+                  onClick={() => setGeneratedJobNotice(null)}
+                  className="text-xs font-semibold underline"
+                >
+                  Tutup
+                </button>
+              </div>
             </div>
             <div className="flex flex-wrap items-center gap-2 text-xs">
               <span>Job ID: <code>{generatedJobNotice.id}</code></span>

@@ -1,15 +1,20 @@
 import { clearAuthSession, getAccessToken } from "@/lib/auth";
 import type {
+  ApproveJobRequest,
   DashboardSummary,
   EndpointDetail,
   EndpointItem,
   EndpointStatus,
+  ExecutionLogItem,
   FindingItem,
   FindingSource,
   FindingStatus,
+  JobStatus,
   LoginRequest,
   OSFamily,
+  RejectJobRequest,
   RemediationJob,
+  RemediationJobDetail,
   SeverityLevel,
   SyncResult,
   TokenResponse,
@@ -166,4 +171,85 @@ export async function generateRemediation(
     `/api/findings/${findingId}/generate-remediation`,
     { method: "POST" }
   );
+}
+
+export interface RemediationQueryParams {
+  status?: JobStatus;
+  target_os?: OSFamily;
+  skip?: number;
+  limit?: number;
+}
+
+export async function fetchRemediations(
+  params: RemediationQueryParams = {}
+): Promise<RemediationJob[]> {
+  const qs = new URLSearchParams();
+  if (params.status) qs.set("status", params.status);
+  if (params.target_os) qs.set("target_os", params.target_os);
+  if (typeof params.skip === "number") qs.set("skip", String(params.skip));
+  if (typeof params.limit === "number") qs.set("limit", String(params.limit));
+
+  const query = qs.toString();
+  return apiFetch<RemediationJob[]>(`/api/remediations${query ? `?${query}` : ""}`);
+}
+
+export async function fetchRemediationDetail(
+  jobId: string
+): Promise<RemediationJob> {
+  return apiFetch<RemediationJob>(`/api/remediations/${jobId}`);
+}
+
+export async function fetchApprovalQueue(
+  params: { skip?: number; limit?: number } = {}
+): Promise<RemediationJobDetail[]> {
+  const qs = new URLSearchParams();
+  if (typeof params.skip === "number") qs.set("skip", String(params.skip));
+  if (typeof params.limit === "number") qs.set("limit", String(params.limit));
+
+  const query = qs.toString();
+  return apiFetch<RemediationJobDetail[]>(
+    `/api/approvals/queue${query ? `?${query}` : ""}`
+  );
+}
+
+export async function fetchRemediationLogs(
+  jobId: string
+): Promise<ExecutionLogItem[]> {
+  return apiFetch<ExecutionLogItem[]>(`/api/remediations/${jobId}/logs`);
+}
+
+export async function approveRemediationJob(
+  jobId: string,
+  payload: ApproveJobRequest = { execute_immediately: true }
+): Promise<RemediationJobDetail> {
+  return apiFetch<RemediationJobDetail>(`/api/remediations/${jobId}/approve`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function rejectRemediationJob(
+  jobId: string,
+  payload: RejectJobRequest
+): Promise<RemediationJobDetail> {
+  return apiFetch<RemediationJobDetail>(`/api/remediations/${jobId}/reject`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function executeRemediationJob(
+  jobId: string
+): Promise<RemediationJobDetail> {
+  return apiFetch<RemediationJobDetail>(`/api/remediations/${jobId}/execute`, {
+    method: "POST",
+  });
+}
+
+export async function rollbackRemediationJob(
+  jobId: string
+): Promise<RemediationJobDetail> {
+  return apiFetch<RemediationJobDetail>(`/api/remediations/${jobId}/rollback`, {
+    method: "POST",
+  });
 }
