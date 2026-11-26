@@ -4,6 +4,8 @@
 **Fase:** Phase 1 — Minimum Viable Product (MVP)  
 **Metodologi Pengembangan:** Vibe Coding (Contract-First & Mock-First)  
 **Lingkungan Target:** Internal On-Premise / Private Corporate Network (Berbasis Docker)  
+**Target OS Endpoint:** `linux`, `windows`, `macos`  
+**Dokumen Pendamping:** [PROJECT_SPEC.md](../PROJECT_SPEC.md)  
 **Status Dokumen:** Final Draft (Ready for Vibe Coding Execution)  
 
 ---
@@ -17,44 +19,46 @@
 5. [Functional & Non-Functional Requirements](#5-functional--non-functional-requirements)
 6. [Desain Skema Database PostgreSQL](#6-desain-skema-database-postgresql)
 7. [Rencana Sprint Vibe Coding Phase 1](#7-rencana-sprint-vibe-coding-phase-1)
-8. [Lampiran: Referensi Arsitektur Docker & Kontrak Data](#8-lampiran-referensi-arsitektur-docker--kontrak-data)
+8. [Lampiran: Referensi Arsitektur Docker & Kontrak Data Multi-OS](#8-lampiran-referensi-arsitektur-docker--kontrak-data-multi-os)
 
 ---
 
 ## 1. Ringkasan Eksekutif & Masalah yang Diselesaikan
 
 ### 1.1 Latar Belakang & Masalah Utama
-Tim Security Operations dan IT Infrastructure di lingkungan internal perusahaan sering menghadapi kesenjangan operasional antara **deteksi kerentanan/kepatuhan** dengan **eksekusi perbaikan (remediasi)** di ratusan hingga ribuan endpoint (Linux & Windows):
+Tim Security Operations dan IT Infrastructure di lingkungan internal perusahaan sering menghadapi kesenjangan operasional antara **deteksi kerentanan/kepatuhan** dengan **eksekusi perbaikan (remediasi)** di ratusan hingga ribuan endpoint heterogen (**`linux`**, **`windows`**, dan **`macos`**):
 
-1. **Banjir Temuan Tanpa Jalur Remediasi Cepat:** Agent keamanan seperti Wazuh mampu mendeteksi ribuan CVE dan penyimpangan *CIS Benchmark / Security Configuration Assessment (SCA)*, namun penyusunan skrip perbaikan masih dilakukan secara manual oleh engineer.
-2. **Risiko Kerusakan Sistem Saat Remediasi:** Eksekusi skrip hardening atau patching secara langsung tanpa mekanisme cadangan kondisi awal (*pre-change backup*) dan prosedur pemulihan (*rollback*) berisiko memutus layanan produksi atau merusak konfigurasi sistem.
-3. **Kurangnya Kontrol *Human-in-the-Loop* & Auditabilitas:** Skrip yang dijalankan secara ad-hoc via SSH/WinRM sulit dilacak siapa yang membuat, siapa yang menyetujui, apa perubahan persisnya, dan bagaimana membatalkannya saat terjadi insiden.
-4. **Kebijakan Privasi Data Internal:** Informasi topologi server, daftar CVE internal, hostname, dan konfigurasi sensitif dilarang dikirim ke API LLM publik (cloud eksternal).
+1. **Banjir Temuan Tanpa Jalur Remediasi Cepat:** Agent keamanan seperti Wazuh mampu mendeteksi ribuan CVE dan penyimpangan *CIS Benchmark / Security Configuration Assessment (SCA)* di berbagai OS, namun penyusunan skrip perbaikan lintas-OS masih dilakukan secara manual oleh engineer.
+2. **Risiko Kerusakan Sistem Saat Remediasi:** Eksekusi skrip hardening atau patching secara langsung tanpa mekanisme cadangan kondisi awal (*pre-change backup*) dan prosedur pemulihan (*rollback*) berisiko memutus layanan produksi atau merusak konfigurasi sistem. Khusus di `macos`, upaya remediasi otomatis yang menabrak batasan Apple **SIP**, **TCC**, atau kebijakan **MDM** juga berisiko gagal atau melanggar tata kelola perangkat.
+3. **Kurangnya Kontrol *Human-in-the-Loop* & Auditabilitas:** Skrip yang dijalankan secara ad-hoc via SSH/WinRM/remote shell sulit dilacak siapa yang membuat, siapa yang menyetujui, apa perubahan persisnya, dan bagaimana membatalkannya saat terjadi insiden.
+4. **Kebijakan Privasi Data Internal:** Informasi topologi server/workstation, daftar CVE internal, hostname, dan konfigurasi sensitif dilarang dikirim ke API LLM publik (cloud eksternal).
 
 ### 1.2 Solusi: Q-Shields Phase 1 (MVP)
-**Q-Shields** adalah platform keamanan endpoint internal berbasis web untuk **Vulnerability Assessment (CVE)**, **Hardening / Compliance (CIS Benchmark / SCA)**, dan **AI-Assisted Remediation dengan Human-in-the-Loop Approval**.
+**Q-Shields** adalah platform keamanan endpoint internal berbasis web untuk **Vulnerability Assessment (CVE)**, **Hardening / Compliance (CIS Benchmark / SCA)**, dan **AI-Assisted Remediation dengan Human-in-the-Loop Approval** yang mendukung endpoint **`linux`**, **`windows`**, dan **`macos`**.
 
 Platform ini menggabungkan deteksi **Wazuh** (Agent + Manager), penyimpanan terstruktur di **PostgreSQL**, orkestrasi AI lokal menggunakan **Python FastAPI + LangGraph + Ollama** (100% di jaringan internal), serta antarmuka modern **Next.js (App Router) + TypeScript + Tailwind CSS + shadcn/ui**.
 
-Setiap skrip remediasi yang dihasilkan AI **wajib** menyertakan prosedur **Pre-Change Backup** (mencadangkan file konfigurasi/registry/daftar paket beserta checksum ke direktori backup unik per job) dan **auto-revert** jika validasi gagal, serta menghasilkan **`rollback_script` terpisah**. Tanpa jaminan `has_pre_backup = true`, tombol **Approve** di UI akan terkunci secara permanen (*hard-locked*).
+Setiap skrip remediasi yang dapat dijalankan otomatis **wajib** melakukan **Pre-Change Backup** sesuai standar direktori OS target (`/var/backups/q-shields/<job_id>/` untuk `linux`, `C:\ProgramData\Q-Shields\backups\<job_id>\` untuk `windows`, `/Library/Application Support/Q-Shields/backups/<job_id>/` untuk `macos`) beserta **auto-revert** jika validasi gagal, serta menghasilkan **`rollback_script` terpisah**. Tanpa jaminan `has_pre_backup == true`, tombol **Approve** di UI akan terkunci (*hard-locked*), dan job yang statusnya bukan `APPROVED` dilarang keras dieksekusi.
 
 ### 1.3 Arsitektur Stack & Prinsip Vibe Coding
 Karena Phase 1 dibangun secara bertahap melalui **vibe coding** (bukan coding fullstack manual dari nol), PRD ini menetapkan empat pilar disiplin agar pengembangan tidak macet di tengah jalan:
 
 | Prinsip | Implementasi Teknis di Q-Shields |
 | :--- | :--- |
-| **1. Pemisahan Stack Docker** | Stack **Wazuh** (`docker-compose.wazuh.yml`) dan stack aplikasi **Q-Shields** (`docker-compose.qshields.yml`: PostgreSQL, Ollama, FastAPI Backend, Next.js Frontend) dijalankan terpisah dan berkomunikasi melalui Docker external network (`qshields-net`) dan REST API/TLS. Jika aplikasi Q-Shields di-restart saat vibe coding, Wazuh Manager tidak ikut terganggu. |
-| **2. Contract-First Development** | Seluruh pertukaran data antar komponen (API FastAPI ↔ Next.js, LangGraph ↔ Ollama Structured Output, Wazuh Adapter ↔ Database) harus mengikuti skema Pydantic/JSON dan TypeScript interface yang didefinisikan sebelum generasi kode UI/fitur. |
-| **3. Mock-First Integration** | Fitur sinkronisasi Wazuh dan generasi skrip AI wajib dibangun dengan *adapter pattern* (`WAZUH_MODE=mock\|live`, `LLM_MODE=mock\|ollama`) sehingga UI dan alur approval dapat diuji penuh menggunakan mock data deterministik sebelum terhubung ke container Wazuh dan Ollama live. |
+| **1. Pemisahan Stack Docker** | Stack **Wazuh** (`docker-compose.wazuh.yml`) dan stack aplikasi **Q-Shields** (`docker-compose.app.yml`: PostgreSQL, Ollama, FastAPI Backend, Next.js Frontend) dijalankan terpisah dan berkomunikasi melalui Docker external network (`qshields-net`) dan REST API/TLS. Jika aplikasi Q-Shields di-restart saat vibe coding, Wazuh Manager tidak ikut terganggu. |
+| **2. Contract-First Development** | Seluruh pertukaran data antar komponen (API FastAPI ↔ Next.js, LangGraph ↔ Ollama Structured Output, Wazuh Adapter ↔ Database) harus mengikuti skema Pydantic/JSON dan TypeScript interface yang didefinisikan sebelum generasi kode UI/fitur (termasuk nilai standar `os_family`: `linux`, `windows`, `macos`). |
+| **3. Mock-First Integration** | Fitur sinkronisasi Wazuh dan generasi skrip AI wajib dibangun dengan *adapter pattern* (`WAZUH_MODE=mock\|live`, `LLM_MODE=mock\|ollama`) sehingga UI dan alur approval dapat diuji penuh menggunakan mock data deterministik untuk ketiga OS (`linux`, `windows`, `macos`) sebelum terhubung ke container Wazuh dan Ollama live. |
 | **4. Schema Readiness (Phase 2 & 3)** | Skema database PostgreSQL sejak Phase 1 sudah menyediakan kolom dan tabel cadangan untuk fitur Phase 2 (Static Analyzer & Canary Deployment) dan Phase 3 (Sysmon/eBPF Telemetry, Sigma Rules, EDR Actions) guna mencegah *breaking schema migration*. |
 
 ```mermaid
 flowchart LR
-    subgraph Wazuh_Stack ["Docker Stack 1: Wazuh Infrastructure"]
-        WA["Wazuh Agent (Linux / Windows)"] -->|"Events / SCA / Syscollector"| WM["Wazuh Manager & API"]
+    subgraph Wazuh_Stack ["Docker Stack 1: docker-compose.wazuh.yml"]
+        WA_L["Wazuh Agent (linux)"] -->|"Events / SCA / Syscollector"| WM["Wazuh Manager & API"]
+        WA_W["Wazuh Agent (windows)"] -->|"Events / SCA / Syscollector"| WM
+        WA_M["Wazuh Agent (macos)"] -->|"Events / SCA / Syscollector"| WM
     end
 
-    subgraph QShields_Stack ["Docker Stack 2: Q-Shields Application"]
+    subgraph QShields_Stack ["Docker Stack 2: docker-compose.app.yml"]
         FE["Next.js App Router + shadcn/ui"] <-->|"REST API + JWT"| BE["FastAPI + LangGraph"]
         BE <-->|"Local Inference (No Internet)"| OLL["Ollama (Local LLM)"]
         BE <-->|"SQL (Relational + Audit Log)"| PG[("PostgreSQL")]
@@ -72,8 +76,8 @@ flowchart LR
 
 | Persona | Role Sistem | Deskripsi & Tanggung Jawab Utama |
 | :--- | :--- | :--- |
-| **Security / IT Operator** | `OPERATOR` | Engineer harian yang memantau status endpoint, memicu sinkronisasi temuan CVE/SCA dari Wazuh, meminta AI (LangGraph + Ollama) membuat draf skrip remediasi & rollback, dan mengeksekusi job yang sudah disetujui. **Tidak berhak** menyetujui (*approve*) skrip miliknya sendiri maupun orang lain. |
-| **Security Lead / Change Approver** | `APPROVER` | Penanggung jawab *Change Advisory / Security Review* yang memeriksa kesesuaian skrip remediasi, validasi keberadaan *pre-change backup*, meninjau `rollback_script`, serta memberikan keputusan **Approve** atau **Reject** (disertai catatan alasan). |
+| **Security / IT Operator** | `OPERATOR` | Engineer harian yang memantau status endpoint (`linux`, `windows`, `macos`), memicu sinkronisasi temuan CVE/SCA dari Wazuh, meminta AI (LangGraph + Ollama) membuat draf skrip remediasi & rollback, dan mengeksekusi job yang sudah berstatus `APPROVED` (atau menindaklanjuti catatan manual/MDM untuk job `MANUAL_REQUIRED`). **Tidak berhak** menyetujui (*approve*) skrip miliknya sendiri maupun orang lain. |
+| **Security Lead / Change Approver** | `APPROVER` | Penanggung jawab *Change Advisory / Security Review* yang memeriksa kesesuaian skrip remediasi terhadap target OS, validasi keberadaan *pre-change backup* (`has_pre_backup == true`), meninjau `rollback_script`, serta memberikan keputusan **Approve** atau **Reject** (disertai catatan alasan). |
 | **Platform Administrator** | `ADMIN` | Pengelola infrastruktur Q-Shields: mengelola akun user lokal, mengonfigurasi integrasi Domain Controller / LDAP, mengatur pemetaan grup LDAP ke role sistem (`ldap_group_mappings`), meninjau seluruh audit log, serta memiliki akses penuh operasional. |
 
 ### 2.2 RBAC Permission Matrix
@@ -81,12 +85,12 @@ flowchart LR
 | Kemampuan / Aksi Sistem | `OPERATOR` | `APPROVER` | `ADMIN` | Catatan Keamanan |
 | :--- | :---: | :---: | :---: | :--- |
 | Login (Local Account atau LDAP/AD) | ✅ | ✅ | ✅ | Audit log tercatat untuk setiap percobaan login. |
-| Lihat Dashboard, Endpoints, CVE & SCA Findings | ✅ | ✅ | ✅ | Read-only pada inventori dan temuan. |
+| Lihat Dashboard, Endpoints, CVE & SCA Findings | ✅ | ✅ | ✅ | Read-only pada inventori dan temuan lintas `linux`/`windows`/`macos`. |
 | Trigger Sinkronisasi Data Wazuh (Mock/Live) | ✅ | ✅ | ✅ | Tercatat siapa pemicunya di `audit_logs`. |
 | Generate AI Remediation + Rollback Script | ✅ | ❌ | ✅ | `APPROVER` fokus pada review agar ada *separation of duties*. |
 | Lihat Detail Job, Script, Backup Targets & Logs | ✅ | ✅ | ✅ | Semua role internal dapat mengaudit detail job. |
-| **Approve / Reject Remediation Job** | ❌ | ✅ | ✅ | **Wajib** `has_pre_backup = true` (terkunci di UI & API jika `false`). |
-| Eksekusi Job (`APPROVED` → `EXECUTING`) | ✅ | ❌ | ✅ | Hanya job berstatus `APPROVED` yang bisa dieksekusi. |
+| **Approve / Reject Remediation Job** | ❌ | ✅ | ✅ | **Wajib** `has_pre_backup == true` & `remediation_feasibility == 'AUTO_SAFE'` (terkunci di UI & API jika tidak terpenuhi). |
+| Eksekusi Job (`APPROVED` → `EXECUTING`) | ✅ | ❌ | ✅ | **Dilarang keras** eksekusi jika status job bukan `APPROVED`. |
 | Trigger Manual Rollback (`COMPLETED`/`FAILED` → `ROLLED_BACK`) | ✅ | ✅ | ✅ | Memicu `rollback_script` menggunakan `backup_path` job terkait. |
 | Kelola User Lokal (Create/Disable/Reset Password) | ❌ | ❌ | ✅ | Password lokal di-hash (Argon2id/bcrypt). |
 | Kelola Mapping Grup LDAP → Role & Konfigurasi Sistem | ❌ | ❌ | ✅ | Grup LDAP tak dikenal jatuh ke role terendah (`OPERATOR`). |
@@ -110,43 +114,46 @@ flowchart LR
 
 ### 3.1 In-Scope (Dibangun & Diselesaikan di Phase 1)
 1. **Infrastruktur Docker Terpisah:**
-   - Setup terpisah `docker-compose.wazuh.yml` (Wazuh Manager, Indexer/Dashboard bawaan Wazuh jika diperlukan) dan `docker-compose.qshields.yml` (PostgreSQL, Ollama, FastAPI, Next.js).
+   - Setup terpisah `docker-compose.wazuh.yml` (Wazuh Manager & API) dan `docker-compose.app.yml` (PostgreSQL, Ollama, FastAPI + LangGraph, Next.js) yang terhubung melalui Docker external network `qshields-net`.
 2. **Autentikasi & Otorisasi (Local + LDAP + RBAC):**
-   - Login hybrid (pilih/deteksi provider `LOCAL` atau `LDAP`), JWT session dengan expiry terukur, RBAC untuk `OPERATOR`, `APPROVER`, `ADMIN`, serta UI manajemen user lokal dan LDAP group mapping.
-3. **Wazuh Ingestion & Asset Visibility (Mock → Live):**
-   - Sinkronisasi daftar endpoint/agent (OS, IP, versi agent, status koneksi), daftar CVE per endpoint, dan hasil pemeriksaan CIS Benchmark / SCA per endpoint ke tabel relasional PostgreSQL.
-4. **AI-Assisted Remediation & Pre-Change Backup Engine:**
-   - Alur kerja **LangGraph** memanggil **Ollama** lokal untuk menghasilkan paket remediasi terstruktur (Bash untuk Linux, PowerShell untuk Windows) yang terdiri dari:
-     - `remediation_script`: wajib diawali blok **Pre-Change Backup** (menyalin file target/registry/daftar paket ke direktori unik job + menghitung SHA-256 checksum) dan diakhiri **blok validasi + auto-revert** jika validasi gagal.
-     - `rollback_script`: skrip mandiri yang memulihkan sistem persis dari `backup_path` job tersebut.
-     - `backup_targets` & `backup_path` & `has_pre_backup`.
+   - Login hybrid (`LOCAL` dengan password hash dan `LDAP` via `ldap3` tanpa menyimpan password LDAP), JWT session dengan expiry terukur, RBAC untuk `OPERATOR`, `APPROVER`, `ADMIN`, serta UI manajemen user lokal dan LDAP group mapping.
+3. **Wazuh Ingestion & Asset Visibility Multi-OS (Mock → Live):**
+   - Sinkronisasi daftar endpoint/agent dengan normalisasi `os_family` menjadi **`linux`**, **`windows`**, atau **`macos`**, daftar CVE per endpoint, dan hasil pemeriksaan CIS Benchmark / SCA ke tabel relasional PostgreSQL.
+4. **AI-Assisted Remediation & Pre-Change Backup Engine (3 OS):**
+   - Alur kerja **LangGraph** memanggil **Ollama** lokal untuk menghasilkan paket remediasi sesuai standar `target_os`:
+     - **`linux`** → Bash (`.sh`, `set -euo pipefail`, path absolut, aman untuk target Linux), backup di `/var/backups/q-shields/<job_id>/` (file/konfigurasi + atribut/izin, checksum `sha256sum`, daftar paket awal).
+     - **`windows`** → PowerShell (`.ps1`, `$ErrorActionPreference = "Stop"`, path absolut untuk konteks layanan `NT AUTHORITY\SYSTEM`, tanpa bergantung pada sesi user interaktif), backup di `C:\ProgramData\Q-Shields\backups\<job_id>\` (file konfigurasi, `reg export` registry terkait, hash file, daftar paket/KB awal).
+     - **`macos`** → Shell BSD-safe (`.sh`, `set -eu`, kompatibel shell bawaan macOS / `zsh` atau Bash 3.2, tanpa perintah khusus Linux seperti `systemctl`, `apt-get`, `yum`, `dnf`, serta menghormati Apple **SIP**, **TCC**, dan **MDM**), backup di `/Library/Application Support/Q-Shields/backups/<job_id>/` (file/plist/konfigurasi yang diizinkan, hash file `shasum -a 256`, status/daftar paket atau pengaturan awal).
+   - Untuk temuan `macos` yang diblokir oleh SIP, TCC, atau kebijakan MDM, AI wajib menandai `remediation_feasibility = 'MANUAL_OR_MDM_REQUIRED'`, `status = 'MANUAL_REQUIRED'`, `has_pre_backup = false`, dan mengisi `manual_action_notes` dengan tindakan manual/MDM yang diperlukan.
 5. **Human-in-the-Loop Approval Queue:**
-   - Antarmuka peninjauan skrip (syntax view, target endpoint, ringkasan risiko, target backup).
-   - **Hard-lock Tombol Approve:** UI menonaktifkan tombol Approve jika `has_pre_backup === false` dan API menolak `POST /jobs/{id}/approve` dengan HTTP `400/422`.
+   - Antarmuka peninjauan skrip (syntax view, target OS, target endpoint, ringkasan risiko, target backup, dan `rollback_script`).
+   - **Hard-lock Tombol Approve:** UI menonaktifkan tombol Approve jika `has_pre_backup === false` (atau `remediation_feasibility !== 'AUTO_SAFE'` / `status !== 'PENDING_APPROVAL'`), dan API menolak `POST /jobs/{id}/approve` dengan HTTP `422` / `409`.
 6. **Controlled Execution & Rollback:**
-   - Eksekusi job berstatus `APPROVED` ke endpoint via Wazuh Active Response (atau Mock Runner saat pengembangan), pembaruan status real-time/polling ke PostgreSQL (`EXECUTING` → `COMPLETED` / `FAILED` / `ROLLED_BACK`), serta eksekusi manual `rollback_script`.
+   - Eksekusi **hanya diizinkan jika status job adalah `APPROVED`** (`status == 'APPROVED'`).
+   - Di endpoint, eksekusi menjalankan pre-change backup → apply change → post-change validation → **auto-revert** otomatis dari `backup_path` milik `<job_id>` jika validasi gagal (status menjadi `ROLLED_BACK`).
+   - Mendukung eksekusi manual `rollback_script` (untuk job `COMPLETED` atau `FAILED`) yang merujuk ke `backup_path` milik `<job_id>` dan memperbarui status menjadi `ROLLED_BACK`.
 7. **Relational Audit Trail:**
-   - Seluruh aksi penting (login, sync, generate script, approve/reject, execute, rollback, ubah user/LDAP mapping) dicatat ke tabel relasional terindeks `audit_logs` di PostgreSQL.
+   - Seluruh aksi penting dicatat ke tabel relasional terindeks `audit_logs` di PostgreSQL.
 
 ### 3.2 Out-of-Scope di Phase 1 (Kesiapan Arsitektur & Skema untuk Phase 2 & 3)
 Fitur-fitur berikut **TIDAK** diimplementasikan logika eksekusinya di Phase 1, tetapi **kolom, enum, dan tabel cadangannya sudah disiapkan** di PostgreSQL dan kontrak arsitektur:
 
 | Fase Masa Depan | Fitur Out-of-Scope Phase 1 | Kesiapan yang Ditanam Sejak Phase 1 |
 | :--- | :--- | :--- |
-| **Phase 2: Pre-Approval Safety & Gradual Rollout** | 1. **Static Code Analyzer Otomatis** (`ShellCheck` untuk skrip Bash, `PSScriptAnalyzer` untuk skrip PowerShell) sebelum approval.<br>2. **Canary Deployment** (uji coba otomatis ke 1 PC/server canary terlebih dahulu dan verifikasi sehat sebelum push massal ke grup endpoint). | - Kolom `static_analysis_status`, `static_analysis_report` (JSONB), `analyzed_at` pada tabel `remediation_jobs`.<br>- Kolom `is_canary_eligible` pada tabel `endpoints`.<br>- Kolom `deployment_strategy` (`SINGLE`/`CANARY_FIRST`/`BATCH`), `canary_endpoint_id`, `canary_job_id`, dan `target_group_id` pada `remediation_jobs`. |
-| **Phase 3: Real-Time Telemetry & Active EDR** | 1. **Telemetri Real-Time** berbasis `Sysmon` (Windows) dan `eBPF` (Linux).<br>2. **Deteksi Sigma Rules** terhadap event telemetri.<br>3. **Aksi Cepat EDR** (*Isolate Host*, *Kill Process*, *Quarantine File*). | - Kolom `isolation_status` dan `telemetry_agent_version` pada `endpoints`.<br>- Kolom opsional `sigma_rule_id` pada `findings`.<br>- Tabel cadangan terstruktur `telemetry_events` (dengan indeks waktu & rule) dan `edr_actions` (untuk mencatat perintah *Isolate Host*, *Kill Process*, *Quarantine File* beserta status eksekusinya). |
+| **Phase 2: Pre-Approval Safety & Gradual Rollout** | 1. **Static Code Analyzer Otomatis** (`ShellCheck` untuk skrip shell `linux`/`macos` dan `PSScriptAnalyzer` untuk skrip PowerShell `windows`) sebelum approval.<br>2. **Canary Deployment** (uji coba otomatis ke 1 PC/server canary terlebih dahulu dan verifikasi sehat sebelum push massal ke grup endpoint). | - Kolom `static_analysis_status`, `static_analysis_report` (JSONB), `analyzed_at` pada tabel `remediation_jobs`.<br>- Kolom `is_canary_eligible` pada tabel `endpoints`.<br>- Kolom `deployment_strategy` (`SINGLE`/`CANARY_FIRST`/`BATCH`), `canary_endpoint_id`, `canary_job_id` pada `remediation_jobs`. |
+| **Phase 3: Real-Time Telemetry & Active EDR** | 1. **Telemetri Real-Time** berbasis `Sysmon` (Windows) dan `eBPF` (Linux/sensor terkait).<br>2. **Deteksi Sigma Rules** terhadap event telemetri.<br>3. **Aksi Cepat EDR** (*Isolate Host*, *Kill Process*, *Quarantine File*). | - Kolom `isolation_status` dan `telemetry_agent_version` pada `endpoints`.<br>- Kolom opsional `sigma_rule_id` pada `findings`.<br>- Tabel cadangan terstruktur `telemetry_events` (dengan indeks waktu & rule) dan `edr_actions` (untuk mencatat perintah *Isolate Host*, *Kill Process*, *Quarantine File* beserta status eksekusinya). |
 
 ---
 
 ## 4. End-to-End User Flows
 
 ### 4.1 Flow A: Sinkronisasi Data Wazuh (Mock → Live)
-1. `OPERATOR` (atau scheduler periodik opsional) menekan tombol **"Sync Wazuh Data"** di UI atau memanggil `POST /api/v1/sync/wazuh`.
+1. `OPERATOR` menekan tombol **"Sync Wazuh Data"** di UI atau memanggil `POST /api/v1/sync/wazuh`.
 2. Backend memeriksa konfigurasi `WAZUH_MODE`:
-   - Jika `mock`: membaca dataset JSON deterministik dari direktori fixture lokal.
-   - Jika `live`: mengautentikasi ke Wazuh Manager API (JWT token) melalui jaringan `qshields-net`, mengambil daftar agents, CVE vulnerabilities (`/vulnerability/{agent_id}`), dan hasil SCA/CIS (`/sca/{agent_id}`).
+   - Jika `mock`: membaca dataset JSON deterministik yang mencakup sampel endpoint `linux`, `windows`, dan `macos`.
+   - Jika `live`: mengautentikasi ke Wazuh Manager API melalui jaringan `qshields-net`, mengambil daftar agents, CVE vulnerabilities (`/vulnerability/{agent_id}`), dan hasil SCA/CIS (`/sca/{agent_id}`), lalu menormalisasi OS agent menjadi `os_family` (`linux` | `windows` | `macos`).
 3. Backend melakukan *upsert* secara idempotent ke tabel `endpoints` dan `findings` di PostgreSQL.
-4. Sistem mencatat ringkasan sinkronisasi (jumlah endpoint baru/diperbarui, temuan baru/terselesaikan) ke `audit_logs` dan mengembalikan ringkasan ke UI.
+4. Sistem mencatat ringkasan sinkronisasi ke `audit_logs` dan mengembalikan ringkasan ke UI.
 
 ```mermaid
 sequenceDiagram
@@ -159,65 +166,73 @@ sequenceDiagram
     Op->>UI: Klik "Sync Wazuh"
     UI->>API: POST /api/v1/sync/wazuh
     API->>Adapter: fetch_agents_cve_sca()
-    Adapter-->>API: Normalized Endpoints & Findings
+    Adapter-->>API: Normalized Endpoints (linux/windows/macos) & Findings
     API->>DB: Upsert endpoints & findings (Idempotent)
     API->>DB: Insert audit_logs (SYNC_WAZUH)
     API-->>UI: 200 OK (Summary Counts)
 ```
 
 ### 4.2 Flow B: Generate Script Remediasi + Pre-Change Backup (LangGraph + Ollama)
-1. `OPERATOR` memilih satu temuan (CVE atau SCA/CIS check yang gagal) pada endpoint tertentu, lalu mengklik **"Generate Remediation"**.
-2. Backend membuat record awal di `remediation_jobs` dengan status `GENERATING` dan menjalankan graph **LangGraph** yang memiliki node terstruktur:
-   - **Node 1 (`context_builder`):** Mengambil detail temuan, OS/distro endpoint, dan aturan kontrak keamanan.
-   - **Node 2 (`script_generator`):** Memanggil Ollama lokal (atau Mock LLM jika `LLM_MODE=mock`) dengan *structured JSON output* untuk menghasilkan:
-     - `remediation_script` (wajib mencakup blok pre-change backup ke `backup_path` unik per job, misal `/var/backups/q-shields/<job_id>/` atau `C:\ProgramData\Q-Shields\backups\<job_id>\`, pencatatan checksum SHA-256, langkah remediasi, langkah validasi pasca-perubahan, dan **auto-revert** jika validasi gagal).
-     - `rollback_script` (skrip mandiri yang membaca manifest/file dari `backup_path` tersebut untuk mengembalikan kondisi semula).
-     - `backup_targets` (daftar path file/registry/paket yang dibackup).
-   - **Node 3 (`safety_validator`):** Memeriksa secara programatik apakah:
-     - `backup_path` valid dan unik per `job_id`,
-     - `backup_targets` tidak kosong,
-     - `remediation_script` memuat instruksi pre-backup dan logika auto-revert,
-     - `rollback_script` tidak kosong dan merujuk ke `backup_path` yang sama.
-3. Jika semua pemeriksaan lolos, `has_pre_backup` disetel `true` dan status job menjadi `PENDING_APPROVAL`. Jika gagal validasi parser (atau backup tidak terverifikasi), `has_pre_backup` disetel `false` (status `DRAFT_UNSAFE` atau `PENDING_APPROVAL` terkunci) agar **tidak pernah** bisa disetujui.
+1. `OPERATOR` memilih satu temuan (CVE atau SCA/CIS check yang gagal) pada endpoint tertentu (`linux`, `windows`, atau `macos`), lalu mengklik **"Generate Remediation"**.
+2. Backend membuat record awal di `remediation_jobs` dengan status `GENERATING` dan menjalankan graph **LangGraph**:
+   - **Node 1 (`context_builder`):** Mengambil detail temuan, `os_family` target (`linux`/`windows`/`macos`), aturan bahasa skrip, path backup per OS, dan aturan batasan SIP/TCC/MDM untuk `macos`.
+   - **Node 2 (`script_generator`):** Memanggil Ollama lokal (atau Mock LLM jika `LLM_MODE=mock`) dengan *structured JSON output*:
+     - Jika temuan di `macos` diblokir oleh SIP, TCC, atau MDM: AI menetapkan `remediation_feasibility = "MANUAL_OR_MDM_REQUIRED"`, `has_pre_backup = false`, dan mengisi `manual_action_notes` dengan panduan tindakan manual/MDM yang diperlukan.
+     - Jika dapat diremediasi otomatis (`remediation_feasibility = "AUTO_SAFE"`): AI menghasilkan `remediation_script`, `validation_script`, `rollback_script`, `backup_path` (sesuai OS dan `<job_id>`), dan `backup_targets` sesuai standar OS:
+       - `linux`: Bash (`.sh`, `set -euo pipefail`, path absolut), backup ke `/var/backups/q-shields/<job_id>/` (file + izin + `sha256sum` + daftar paket awal).
+       - `windows`: PowerShell (`.ps1`, `$ErrorActionPreference = "Stop"`, path absolut konteks `NT AUTHORITY\SYSTEM`, non-interaktif), backup ke `C:\ProgramData\Q-Shields\backups\<job_id>\` (file + `reg export` + hash + daftar paket/KB awal).
+       - `macos`: Shell BSD-safe (`.sh`, `set -eu`, kompatibel `zsh`/Bash 3.2, bebas perintah Linux seperti `systemctl`/`apt-get`/`yum`/`dnf`, hormati SIP/TCC/MDM), backup ke `/Library/Application Support/Q-Shields/backups/<job_id>/` (file/plist/konfigurasi diizinkan + `shasum -a 256` + daftar paket/pengaturan awal).
+   - **Node 3 (`safety_validator`):** Memvalidasi secara programatik:
+     - Kesesuaian `target_os` vs `script_type` (`linux`↔`bash`, `windows`↔`powershell`, `macos`↔`bsd_shell`) dan kesesuaian prefix `backup_path` per OS.
+     - Untuk `macos`, memastikan tidak ada perintah terlarang Linux (`systemctl`, `apt-get`, `yum`, `dnf`) atau modifikasi jalur SIP/TCC terlarang.
+     - Untuk `windows`, memastikan tidak ada ketergantungan sesi user interaktif dan menggunakan `$ErrorActionPreference = "Stop"`.
+     - Untuk `linux`, memastikan terdapat `set -euo pipefail`.
+     - Memverifikasi keberadaan pre-change backup, checksum, `validation_script`, logika auto-revert, dan `rollback_script` yang merujuk `backup_path` milik `<job_id>`.
+3. Hasil akhir disimpan:
+   - Jika `remediation_feasibility == "MANUAL_OR_MDM_REQUIRED"` → `status = 'MANUAL_REQUIRED'`, `has_pre_backup = false`.
+   - Jika `AUTO_SAFE` dan lolos `safety_validator` → `has_pre_backup = true`, `status = 'PENDING_APPROVAL'`.
+   - Jika gagal validasi `safety_validator` → `has_pre_backup = false`, `status = 'PENDING_APPROVAL'` dengan tombol **Approve terkunci**.
 
 ```mermaid
 flowchart TD
-    A["Operator pilih Finding & Endpoint"] --> B["LangGraph: context_builder"]
+    A["Operator pilih Finding & Endpoint (linux/windows/macos)"] --> B["LangGraph: context_builder"]
     B --> C["LangGraph: script_generator via Ollama Lokal"]
-    C --> D["LangGraph: safety_validator"]
-    D -->|"Backup path, targets, auto-revert & rollback_script valid"| E["has_pre_backup = true\nStatus: PENDING_APPROVAL"]
-    D -->|"Salah satu komponen pre-backup tidak valid"| F["has_pre_backup = false\nTombol Approve TERKUNCI"]
+    C -->|"macos diblokir SIP / TCC / MDM"| M["remediation_feasibility = MANUAL_OR_MDM_REQUIRED\nhas_pre_backup = false\nStatus: MANUAL_REQUIRED + manual_action_notes"]
+    C -->|"Dapat diremediasi otomatis"| D["LangGraph: safety_validator (cek OS rules, pre-backup, auto-revert & rollback_script)"]
+    D -->|"Lolos validasi OS & pre-backup"| E["has_pre_backup = true\nStatus: PENDING_APPROVAL"]
+    D -->|"Gagal validasi safety_validator"| F["has_pre_backup = false\nTombol Approve TERKUNCI"]
 ```
 
 ### 4.3 Flow C: Approval Queue (*Human-in-the-Loop*)
-1. `APPROVER` membuka halaman **Approval Queue** dan memilih job berstatus `PENDING_APPROVAL`.
+1. `APPROVER` membuka halaman **Approval Queue** dan memilih job berstatus `PENDING_APPROVAL` (job `MANUAL_REQUIRED` tampil di daftar terpisah/badge khusus sebagai panduan manual/MDM, tidak dapat di-Approve).
 2. UI menampilkan:
-   - Informasi target endpoint (hostname, OS, IP) dan detail temuan CVE/SCA.
-   - Indikator status Pre-Backup (`has_pre_backup`), `backup_path`, dan daftar `backup_targets`.
-   - Tab kode terpisah: **Remediation Script** (highlight blok backup & auto-revert) dan **Rollback Script**.
+   - Informasi target endpoint (hostname, `os_family`, IP) dan detail temuan CVE/SCA.
+   - Indikator status Pre-Backup (`has_pre_backup`), `backup_path` sesuai OS, dan daftar `backup_targets`.
+   - Tab kode terpisah: **Remediation Script** (highlight blok pre-backup, validasi & auto-revert) dan **Rollback Script**.
 3. **Aturan Kunci UI & API:**
-   - Jika `has_pre_backup === false`, tombol **Approve** di UI berada dalam status `disabled` disertai banner peringatan eksplisit: *"Approval terkunci: Pre-change backup belum terverifikasi pada skrip ini."*
-   - Jika `has_pre_backup === true`, `APPROVER` dapat menekan **Approve** (status menjadi `APPROVED`, `approved_by` & `approved_at` tersimpan) atau **Reject** (wajib mengisi `rejection_reason`, status menjadi `REJECTED`).
-   - Backend memvalidasi ulang `has_pre_backup === true` dan memastikan user memiliki role `APPROVER` atau `ADMIN` (serta *optional/recommended rule*: `approved_by != created_by` untuk *separation of duties* kecuali override oleh `ADMIN` yang tercatat di audit log).
+   - Jika `has_pre_backup === false` atau `remediation_feasibility !== 'AUTO_SAFE'` atau `status !== 'PENDING_APPROVAL'`, tombol **Approve** di UI berada dalam status `disabled` disertai banner peringatan eksplisit.
+   - Jika seluruh syarat terpenuhi (`has_pre_backup === true` dan `AUTO_SAFE`), `APPROVER` dapat menekan **Approve** (`status = 'APPROVED'`, `approved_by` & `approved_at` tersimpan) atau **Reject** (wajib mengisi `rejection_reason`, `status = 'REJECTED'`).
+   - Backend memvalidasi ulang di `POST /api/v1/jobs/{id}/approve` (mengembalikan HTTP `422` jika `has_pre_backup == false` atau `MANUAL_OR_MDM_REQUIRED`, dan HTTP `409` jika status bukan `PENDING_APPROVAL`).
 
-### 4.4 Flow D: Eksekusi, Validasi & Rollback
-1. `OPERATOR` (atau `ADMIN`) membuka job berstatus `APPROVED` dan mengklik **"Execute Remediation"**.
-2. Status berubah menjadi `EXECUTING`. Backend mengirimkan payload instruksi ke endpoint melalui Wazuh Active Response (atau Mock Runner).
-3. Di endpoint, skrip berjalan secara berurutan:
-   - **Tahap 1 (Pre-Change Backup):** Membuat direktori `backup_path` unik per job, menyalin `backup_targets` (file konfigurasi / ekspor registry / daftar paket terinstal), menyimpan manifest + checksum SHA-256. Jika tahap backup gagal, skrip **berhenti seketika** tanpa mengubah sistem (`FAILED`).
-   - **Tahap 2 (Apply Remediation):** Menerapkan konfigurasi hardening / patch.
-   - **Tahap 3 (Post-Change Validation):** Memeriksa apakah layanan tetap berjalan dan konfigurasi sesuai target.
-     - Jika validasi **berhasil**: status job dicatat `COMPLETED` dan `execution_logs` tersimpan.
-     - Jika validasi **gagal**: skrip otomatis menjalankan prosedur **auto-revert** dari `backup_path`, mengembalikan sistem ke kondisi semula, dan melaporkan status `ROLLED_BACK` (beserta pesan error penyebab auto-revert).
-4. **Manual Rollback:** Untuk job berstatus `COMPLETED` (misal ditemukan efek samping operasional belakangan) atau `FAILED` (jika perubahan parsial terjadi), `OPERATOR`/`APPROVER`/`ADMIN` dapat menekan **"Trigger Rollback"** untuk mengeksekusi `rollback_script` yang merujuk ke `backup_path` job tersebut. Setelah berhasil dipulihkan, status job diperbarui menjadi `ROLLED_BACK`.
+### 4.4 Flow D: Eksekusi, Validasi, Auto-Revert & Rollback
+1. **Guard Eksekusi:** Hanya job dengan **`status === 'APPROVED'`** (dan `has_pre_backup === true`) yang dapat dieksekusi. Pemanggilan `POST /api/v1/jobs/{id}/execute` untuk status lain (`GENERATING`, `PENDING_APPROVAL`, `MANUAL_REQUIRED`, `REJECTED`, `COMPLETED`, `FAILED`, `ROLLED_BACK`) wajib ditolak dengan **HTTP `409 Conflict`**.
+2. `OPERATOR` (atau `ADMIN`) menekan **"Execute Remediation"** pada job `APPROVED`. Status berubah menjadi `EXECUTING`, dan backend mengirim skrip ke endpoint via Wazuh Active Response (atau Mock Runner).
+3. Di endpoint (`linux`, `windows`, atau `macos`), skrip berjalan dalam 4 tahap:
+   - **Tahap 1 (Pre-Change Backup):** Membuat `backup_path` unik per `<job_id>` sesuai OS, mencadangkan file/izin/registry/plist/daftar paket beserta hash SHA-256. Jika tahap backup gagal, eksekusi **berhenti seketika** tanpa mengubah sistem (`status = 'FAILED'`).
+   - **Tahap 2 (Apply Remediation):** Menerapkan perubahan konfigurasi, registry/plist, service/daemon, atau paket.
+   - **Tahap 3 (Post-Change Verification):** Memeriksa konfigurasi dan kesehatan layanan.
+     - Jika validasi **berhasil**: status job dicatat **`COMPLETED`** dan log tersimpan di `job_execution_logs`.
+     - Jika validasi **gagal**: skrip otomatis menjalankan **Auto-Revert** dari `backup_path` milik `<job_id>`, memulihkan kondisi awal, dan status job diperbarui menjadi **`ROLLED_BACK`** (tahap `AUTO_REVERT` tercatat di `job_execution_logs`). Jika proses auto-revert juga gagal, status menjadi **`FAILED`**.
+4. **Manual Rollback:** Untuk job berstatus `COMPLETED` atau `FAILED`, `OPERATOR`/`APPROVER`/`ADMIN` dapat menekan **"Trigger Rollback"** untuk mengeksekusi `rollback_script` terpisah yang merujuk langsung ke `backup_path` milik `<job_id>`. Setelah pemulihan berhasil, status job diperbarui menjadi **`ROLLED_BACK`**.
 
 ```mermaid
 stateDiagram-v2
     [*] --> GENERATING
+    GENERATING --> MANUAL_REQUIRED: macOS diblokir SIP / TCC / MDM
     GENERATING --> PENDING_APPROVAL: Validasi AI Selesai
     PENDING_APPROVAL --> REJECTED: Approver Reject
     PENDING_APPROVAL --> APPROVED: Approver Approve (Wajib has_pre_backup=true)
-    APPROVED --> EXECUTING: Operator Execute
+    APPROVED --> EXECUTING: Operator Execute (Wajib status=APPROVED)
     EXECUTING --> COMPLETED: Pre-Backup + Apply + Validasi Sukses
     EXECUTING --> ROLLED_BACK: Validasi Gagal -> Auto-Revert Sukses
     EXECUTING --> FAILED: Pre-Backup Gagal / Auto-Revert Gagal
@@ -226,18 +241,13 @@ stateDiagram-v2
 ```
 
 ### 4.5 Flow E: Login Manual (Local) & Domain Controller / LDAP
-1. User membuka halaman `/login`, memasukkan `username` dan `password`, serta memilih metode login (`Auto/LDAP` atau `Local Account`).
-2. **Jika `LOCAL`:**
-   - Backend mencari user pada tabel `users` dengan `auth_provider = 'LOCAL'` dan `is_active = true`.
-   - Memverifikasi hash password (Argon2id/bcrypt). Jika cocok, menerbitkan JWT access token berisi `user_id`, `username`, dan `role`.
+1. User membuka `/login`, memasukkan `username` dan `password`, serta memilih metode login (`Auto/LDAP` atau `Local Account`).
+2. **Jika `LOCAL`:** Backend memverifikasi hash password (Argon2id/bcrypt) di PostgreSQL dan menerbitkan JWT access token.
 3. **Jika `LDAP`:**
-   - Backend menggunakan `ldap3` untuk melakukan koneksi aman ke Domain Controller internal dan melakukan bind menggunakan kredensial user. **Password LDAP langsung dibuang dari memori setelah bind dan tidak pernah ditulis ke database atau log.**
-   - Jika bind gagal → kembalikan `401 Unauthorized` dan catat kegagalan di `audit_logs`.
-   - Jika bind berhasil → ambil `distinguishedName`, `displayName`, `mail`, dan daftar grup `memberOf` dari direktori LDAP.
-   - Cocokkan daftar grup terhadap tabel `ldap_group_mappings`:
-     - Jika ada satu atau lebih grup cocok → pilih role dengan privilege tertinggi di antara yang cocok (`ADMIN` > `APPROVER` > `OPERATOR`).
-     - Jika **tidak ada grup yang cocok** → tetapkan role terendah default: **`OPERATOR`**.
-   - Lakukan *upsert* user ke tabel `users` (`auth_provider = 'LDAP'`, `password_hash = NULL`, `role = resolved_role`), catat `LOGIN_LDAP_SUCCESS` di `audit_logs`, dan terbitkan JWT token.
+   - Backend menggunakan `ldap3` untuk melakukan bind langsung ke Domain Controller internal. **Password LDAP dibuang dari memori setelah bind dan tidak pernah ditulis ke database atau log.**
+   - Jika bind berhasil → baca atribut grup `memberOf` dan cocokkan dengan `ldap_group_mappings` (prioritas tertinggi `ADMIN` > `APPROVER` > `OPERATOR`).
+   - **Fallback Rule:** Jika tidak ada grup yang cocok, tetapkan role terendah default **`OPERATOR`**.
+   - Lakukan *upsert* user (`auth_provider = 'LDAP'`, `password_hash = NULL`, `role = resolved_role`), catat ke `audit_logs`, dan terbitkan JWT token.
 
 ---
 
@@ -247,32 +257,32 @@ stateDiagram-v2
 
 | ID | Kategori | Deskripsi Kebutuhan | Acceptance Criteria (Terukur) |
 | :--- | :--- | :--- | :--- |
-| **FR-01** | Auth & RBAC | Sistem mendukung pembuatan akun lokal oleh `ADMIN` dan login hybrid menggunakan akun lokal (`PostgreSQL`) maupun Domain Controller / LDAP (`ldap3`). | - User lokal dapat dibuat, dinonaktifkan, dan login dengan verifikasi hash password.<br>- User LDAP dapat login via `ldap3` tanpa menyimpan password LDAP di kolom mana pun di PostgreSQL (`password_hash IS NULL`).<br>- Jika grup LDAP user tidak terdaftar di `ldap_group_mappings`, user otomatis mendapat role `OPERATOR`. |
-| **FR-02** | RBAC Enforcement | Setiap endpoint API dan komponen UI wajib menegakkan izin akses berdasarkan role (`OPERATOR`, `APPROVER`, `ADMIN`). | - Request API di luar izin role mengembalikan HTTP `403 Forbidden`.<br>- `OPERATOR` tidak melihat tombol aktif untuk Approve/Reject dan User Management. |
-| **FR-03** | Wazuh Sync (Mock & Live) | Sistem dapat menarik inventori endpoint, CVE, dan hasil scan SCA/CIS Benchmark dari Wazuh Manager (atau mode Mock) ke PostgreSQL. | - Tersedia toggle konfigurasi `WAZUH_MODE=mock\|live`.<br>- Sinkronisasi berulang pada data sama tidak menghasilkan duplikasi baris di `endpoints` dan `findings` (idempotent). |
-| **FR-04** | Dashboard & Findings View | Pengguna dapat memfilter dan melihat daftar endpoint, CVE berdasarkan severity (`CRITICAL`, `HIGH`, `MEDIUM`, `LOW`), dan SCA checks yang berstatus `FAILED`. | - Halaman Dashboard menampilkan ringkasan metrik akurat dari query SQL PostgreSQL.<br>- Filter berdasarkan OS, severity, dan status kepatuhan berjalan dalam < 1 detik untuk 1.000+ temuan. |
-| **FR-05** | AI Remediation Generator | Backend menggunakan LangGraph + Ollama lokal untuk menghasilkan paket remediasi berisi `remediation_script`, `rollback_script`, `backup_targets`, `backup_path`, dan `has_pre_backup`. | - Tidak ada panggilan keluar ke internet/API LLM publik.<br>- Output AI diparsing sesuai skema Pydantic ketat.<br>- `backup_path` bersifat unik per `job_id` (mis. `/var/backups/q-shields/<job_id>/`). |
-| **FR-06** | Pre-Change Backup Guard | Sistem memaksa setiap skrip remediasi melakukan backup kondisi awal + checksum sebelum perubahan diterapkan, dan mengunci approval jika tidak valid. | - Jika `has_pre_backup = false`, tombol **Approve** di UI dalam keadaan `disabled`.<br>- Pemanggilan langsung `POST /api/v1/jobs/{id}/approve` saat `has_pre_backup = false` ditolak backend dengan HTTP `422 Unprocessable Entity`. |
-| **FR-07** | Approval Queue | `APPROVER` dan `ADMIN` dapat meninjau detail skrip remediasi & rollback lalu menyetujui (`APPROVED`) atau menolak (`REJECTED` dengan alasan wajib). | - Penolakan tanpa alasan (`rejection_reason` kosong) ditolak oleh API.<br>- Keputusan approval menyimpan `approved_by`, `approved_at`, dan entri `audit_logs`. |
-| **FR-08** | Execution, Auto-Revert & Rollback | Sistem dapat mengeksekusi job `APPROVED`, mendeteksi kegagalan validasi pasca-eksekusi untuk melakukan auto-revert, serta mendukung manual rollback ke status `ROLLED_BACK`. | - Pre-backup gagal → perubahan tidak diterapkan, status `FAILED`.<br>- Validasi gagal → skrip memulihkan file/konfigurasi dari `backup_path`, status menjadi `ROLLED_BACK`.<br>- Tombol **Trigger Rollback** pada job `COMPLETED`/`FAILED` menjalankan `rollback_script` dan memperbarui status menjadi `ROLLED_BACK`. |
+| **FR-01** | Auth & RBAC | Sistem mendukung pembuatan akun lokal oleh `ADMIN` dan login hybrid menggunakan akun lokal (`PostgreSQL`) maupun Domain Controller / LDAP (`ldap3`). | - User lokal dapat dibuat, dinonaktifkan, dan login dengan verifikasi hash password.<br>- User LDAP dapat login via `ldap3` tanpa menyimpan password LDAP di PostgreSQL (`password_hash IS NULL`).<br>- Jika grup LDAP user tidak cocok di `ldap_group_mappings`, user otomatis mendapat role `OPERATOR`. |
+| **FR-02** | RBAC Enforcement | Setiap endpoint API dan komponen UI wajib menegakkan izin akses berdasarkan role (`OPERATOR`, `APPROVER`, `ADMIN`). | - Request API di luar izin role mengembalikan HTTP `403 Forbidden`.<br>- `OPERATOR` tidak dapat melakukan Approve/Reject atau mengelola User/LDAP Mapping. |
+| **FR-03** | Wazuh Sync Multi-OS | Sistem dapat menarik inventori endpoint (`linux`, `windows`, `macos`), CVE, dan hasil SCA/CIS Benchmark dari Wazuh Manager (atau Mock) ke PostgreSQL. | - Tersedia `WAZUH_MODE=mock\|live` dengan fixture mencakup ketiganya (`linux`, `windows`, `macos`).<br>- Nilai `os_family` tersimpan konsisten hanya `'linux'`, `'windows'`, atau `'macos'`.<br>- Sinkronisasi berulang bersifat idempotent. |
+| **FR-04** | Dashboard & Findings View | Pengguna dapat memfilter dan melihat daftar endpoint berdasarkan `os_family` (`linux`, `windows`, `macos`), CVE berdasarkan severity, dan SCA checks yang `OPEN`. | - Filter `os_family`, severity, dan status berjalan akurat dari query SQL PostgreSQL dalam < 1 detik untuk 1.000+ temuan. |
+| **FR-05** | Multi-OS AI Remediation | LangGraph + Ollama lokal menghasilkan paket remediasi sesuai aturan `target_os` (`linux` Bash `.sh` `set -euo pipefail`; `windows` PowerShell `.ps1` `$ErrorActionPreference = "Stop"` konteks `NT AUTHORITY\SYSTEM`; `macos` BSD-safe `.sh` `set -eu` tanpa perintah Linux + patuh SIP/TCC/MDM). | - Tidak ada panggilan keluar ke internet/LLM publik.<br>- `backup_path` sesuai OS target dan unik per `<job_id>`.<br>- Untuk temuan `macos` yang terhalang SIP/TCC/MDM, status menjadi `MANUAL_REQUIRED`, `remediation_feasibility = 'MANUAL_OR_MDM_REQUIRED'`, `has_pre_backup = false`, dan `manual_action_notes` terisi jelas. |
+| **FR-06** | Pre-Change Backup Guard | Sistem memaksa setiap skrip remediasi otomatis melakukan backup kondisi awal + checksum sebelum perubahan diterapkan, dan mengunci approval jika tidak valid. | - `has_pre_backup == false` mengunci tombol **Approve** (`disabled`) di UI.<br>- `POST /api/v1/jobs/{id}/approve` saat `has_pre_backup == false` atau `MANUAL_OR_MDM_REQUIRED` ditolak dengan HTTP `422 Unprocessable Entity`. |
+| **FR-07** | Approval Queue | `APPROVER` dan `ADMIN` dapat meninjau detail skrip remediasi, target backup, & `rollback_script`, lalu menyetujui (`APPROVED`) atau menolak (`REJECTED` dengan alasan wajib). | - Penolakan tanpa `rejection_reason` ditolak API.<br>- Keputusan approval menyimpan `approved_by`, `approved_at`, dan entri `audit_logs`. |
+| **FR-08** | Execution Guard, Auto-Revert & Rollback | Sistem **hanya** mengeksekusi job berstatus `APPROVED`, melakukan auto-revert otomatis jika validasi pasca-perubahan gagal, dan mendukung manual rollback melalui `rollback_script` ke status `ROLLED_BACK`. | - `POST /api/v1/jobs/{id}/execute` untuk status selain `APPROVED` ditolak dengan HTTP `409 Conflict`.<br>- Pre-backup gagal → berhenti sebelum perubahan, status `FAILED`.<br>- Validasi gagal → auto-revert memulihkan dari `backup_path` milik `<job_id>`, status `ROLLED_BACK`.<br>- Manual rollback pada `COMPLETED`/`FAILED` menjalankan `rollback_script` yang merujuk `backup_path` job tersebut dan mengubah status menjadi `ROLLED_BACK`. |
 | **FR-09** | Relational Audit Log | Semua peristiwa keamanan dan perubahan state dicatat ke tabel PostgreSQL `audit_logs` secara terstruktur dan terindeks. | - Mencakup `actor_user_id`, `action`, `resource_type`, `resource_id`, `metadata` (JSONB), `ip_address`, dan `created_at`.<br>- Tidak ada endpoint API untuk `UPDATE` atau `DELETE` baris `audit_logs`. |
 
 ### 5.2 Non-Functional Requirements (NFR)
 
 | ID | Kategori | Deskripsi Kebutuhan | Acceptance Criteria (Terukur) |
 | :--- | :--- | :--- | :--- |
-| **NFR-01** | Data Privacy & Network Isolation | Seluruh pemrosesan AI (Ollama) dan data keamanan (PostgreSQL, Wazuh) berjalan 100% di jaringan internal Docker tanpa akses internet wajib saat runtime. | - Container `ollama`, `backend`, dan `postgres` tidak memerlukan outbound internet untuk menjalankan fitur inti.<br>- Koneksi ke LDAP mendukung LDAPS/TLS (`LDAP_USE_SSL=true`). |
-| **NFR-02** | Security & Credential Hygiene | Kredensial sensitif (JWT secret, DB password, Wazuh API password, LDAP bind service password) dikelola melalui environment variables / Docker secrets. | - Password user lokal di-hash menggunakan Argon2id/bcrypt.<br>- Password user LDAP tidak pernah tersimpan di database maupun tercetak di stdout/log container. |
-| **NFR-03** | Reliability & Timeout Control | Orkestrasi LangGraph/Ollama dan eksekusi Wazuh harus memiliki timeout dan mekanisme *graceful error handling*. | - Timeout inferensi Ollama dikonfigurasi eksplisit (mis. 120 detik) dengan status error jelas jika gagal.<br>- Eksekusi skrip di endpoint memiliki batas waktu agar worker backend tidak *hang*. |
-| **NFR-04** | Database Performance & Indexing | Database PostgreSQL menggunakan tabel relasional terstruktur dengan indeks pada kolom filter utama (bukan data stream / time-series unstructured). | - Indeks tersedia pada `endpoints(wazuh_agent_id)`, `findings(endpoint_id, severity, status)`, `remediation_jobs(status, has_pre_backup)`, dan `audit_logs(created_at, actor_user_id)`. |
-| **NFR-05** | Maintainability (Vibe Coding Ready) | Kode backend memisahkan layer Router, Service, Adapter, dan Schema; frontend memisahkan API client dan komponen shadcn/ui. | - Dokumentasi OpenAPI (`/docs` / `/openapi.json`) otomatis terbuat dari FastAPI dan sinkron dengan tipe TypeScript di frontend. |
-| **NFR-06** | Docker Stack Decoupling | Stack Wazuh dan stack Q-Shields dapat dijalankan, di-stop, dan di-build ulang secara independen. | - Menjalankan `docker compose -f docker-compose.qshields.yml up -d --build` tidak me-restart container di `docker-compose.wazuh.yml`. |
+| **NFR-01** | Data Privacy & Network Isolation | Seluruh pemrosesan AI (Ollama) dan data keamanan (PostgreSQL, Wazuh) berjalan 100% di jaringan internal Docker tanpa akses internet wajib saat runtime. | - Container `ollama`, `backend`, dan `postgres` tidak memerlukan outbound internet.<br>- Koneksi ke LDAP mendukung LDAPS/StartTLS. |
+| **NFR-02** | Security & Credential Hygiene | Kredensial sensitif dikelola melalui environment variables / Docker secrets; skrip Windows aman untuk konteks `NT AUTHORITY\SYSTEM`. | - Password lokal di-hash Argon2id/bcrypt; password LDAP tidak pernah tersimpan di database atau log.<br>- Skrip `windows` tidak bergantung pada sesi user interaktif. |
+| **NFR-03** | Reliability & Timeout Control | Orkestrasi LangGraph/Ollama dan eksekusi Wazuh memiliki timeout dan *graceful error handling*. | - Timeout inferensi Ollama dikonfigurasi eksplisit (mis. 120 detik).<br>- Eksekusi skrip memiliki batas waktu per job agar worker tidak *hang*. |
+| **NFR-04** | Database Performance & Indexing | PostgreSQL menggunakan tabel relasional terstruktur dengan indeks pada kolom filter utama (bukan data stream). | - Indeks tersedia pada `endpoints(wazuh_agent_id, os_family)`, `findings(endpoint_id, severity, status)`, `remediation_jobs(status, target_os, has_pre_backup)`, dan `audit_logs(created_at, actor_user_id)`. |
+| **NFR-05** | Maintainability (Vibe Coding Ready) | Kode backend memisahkan Router, Service, Adapter, dan Schema; frontend memisahkan API client dan komponen shadcn/ui. | - OpenAPI spec FastAPI sinkron dengan kontrak TypeScript di frontend. |
+| **NFR-06** | Docker Stack Decoupling | `docker-compose.wazuh.yml` dan `docker-compose.app.yml` dapat dijalankan dan di-build ulang secara independen. | - Rebuild `docker-compose.app.yml` tidak me-restart container di `docker-compose.wazuh.yml`. |
 
 ---
 
 ## 6. Desain Skema Database PostgreSQL
 
-Seluruh data aplikasi, konfigurasi RBAC/LDAP, pekerjaan remediasi, dan audit log disimpan pada **PostgreSQL** dalam bentuk tabel relasional terstruktur (bukan data stream). Skema di bawah ini sudah mencakup kebutuhan **Phase 1** serta kolom dan tabel cadangan untuk **Phase 2** dan **Phase 3**.
+Seluruh data aplikasi, konfigurasi RBAC/LDAP, pekerjaan remediasi, dan audit log disimpan pada **PostgreSQL** dalam bentuk tabel relasional terstruktur (bukan data stream). Skema di bawah ini konsisten 100% dengan [PROJECT_SPEC.md](../PROJECT_SPEC.md), mencakup **Phase 1** (`linux`, `windows`, `macos`) serta kesiapan **Phase 2** dan **Phase 3**.
 
 ### 6.1 Entity Relationship Diagram (ERD)
 
@@ -309,8 +319,8 @@ erDiagram
         uuid id PK
         varchar wazuh_agent_id UK
         varchar hostname
-        varchar os_family
-        varchar status
+        varchar os_family "linux | windows | macos"
+        varchar connection_status
         boolean is_canary_eligible "Phase 2"
         varchar isolation_status "Phase 3"
     }
@@ -329,6 +339,10 @@ erDiagram
         uuid id PK
         uuid endpoint_id FK
         uuid finding_id FK
+        varchar target_os "linux | windows | macos"
+        varchar script_type "bash | powershell | bsd_shell"
+        varchar remediation_feasibility "AUTO_SAFE | MANUAL_OR_MDM_REQUIRED"
+        text manual_action_notes
         text remediation_script
         text rollback_script
         varchar backup_path
@@ -414,7 +428,7 @@ CREATE TABLE endpoints (
     wazuh_agent_id VARCHAR(64) NOT NULL UNIQUE,
     hostname VARCHAR(255) NOT NULL,
     ip_address INET,
-    os_family VARCHAR(20) NOT NULL CHECK (os_family IN ('LINUX', 'WINDOWS')),
+    os_family VARCHAR(20) NOT NULL CHECK (os_family IN ('linux', 'windows', 'macos')),
     os_name VARCHAR(150),
     os_version VARCHAR(100),
     agent_version VARCHAR(50),
@@ -466,10 +480,16 @@ CREATE TABLE remediation_jobs (
     finding_id UUID NOT NULL REFERENCES findings(id) ON DELETE CASCADE,
     created_by UUID NOT NULL REFERENCES users(id),
     approved_by UUID REFERENCES users(id),
-    target_os VARCHAR(20) NOT NULL CHECK (target_os IN ('LINUX', 'WINDOWS')),
-    script_type VARCHAR(20) NOT NULL CHECK (script_type IN ('BASH', 'POWERSHELL')),
+    target_os VARCHAR(20) NOT NULL CHECK (target_os IN ('linux', 'windows', 'macos')),
+    script_type VARCHAR(20) NOT NULL CHECK (script_type IN ('bash', 'powershell', 'bsd_shell')),
     ai_model_used VARCHAR(100),
     ai_summary TEXT,
+
+    -- Kelayakan & Penanganan SIP / TCC / MDM (khususnya macOS)
+    remediation_feasibility VARCHAR(30) NOT NULL DEFAULT 'AUTO_SAFE' CHECK (
+        remediation_feasibility IN ('AUTO_SAFE', 'MANUAL_OR_MDM_REQUIRED')
+    ),
+    manual_action_notes TEXT,
 
     -- Skrip & Kontrol Pre-Change Backup (Wajib Phase 1)
     remediation_script TEXT NOT NULL,
@@ -480,11 +500,12 @@ CREATE TABLE remediation_jobs (
     backup_checksum VARCHAR(128),
     has_pre_backup BOOLEAN NOT NULL DEFAULT FALSE,
 
-    -- Status Lifecycle (Mencakup ROLLED_BACK)
+    -- Status Lifecycle (Mencakup MANUAL_REQUIRED & ROLLED_BACK)
     status VARCHAR(30) NOT NULL DEFAULT 'GENERATING' CHECK (
         status IN (
             'GENERATING',
             'PENDING_APPROVAL',
+            'MANUAL_REQUIRED',
             'APPROVED',
             'REJECTED',
             'EXECUTING',
@@ -516,6 +537,7 @@ CREATE TABLE remediation_jobs (
 );
 
 CREATE INDEX idx_jobs_status ON remediation_jobs(status);
+CREATE INDEX idx_jobs_target_os ON remediation_jobs(target_os);
 CREATE INDEX idx_jobs_has_pre_backup ON remediation_jobs(has_pre_backup);
 CREATE INDEX idx_jobs_endpoint_id ON remediation_jobs(endpoint_id);
 CREATE INDEX idx_jobs_created_by ON remediation_jobs(created_by);
@@ -602,8 +624,8 @@ Urutan sprint di bawah dirancang khusus untuk **vibe coding** agar setiap lapisa
 - **Tujuan:** Menyiapkan kerangka monorepo/folder, pemisahan file Compose, database PostgreSQL, dan skema kontrak API.
 - **Deliverables:**
   - Struktur direktori (`/backend`, `/frontend`, `/infra`, `/docs`).
-  - `infra/docker-compose.wazuh.yml` (stack Wazuh terpisah) & `infra/docker-compose.qshields.yml` (`postgres`, `ollama`, `backend`, `frontend`) terhubung via external network `qshields-net`.
-  - Migrasi SQL/Alembic awal sesuai Bab 6 PRD ini.
+  - `infra/docker-compose.wazuh.yml` (stack Wazuh terpisah) & `infra/docker-compose.app.yml` (`postgres`, `ollama`, `backend`, `frontend`) terhubung via external network `qshields-net`.
+  - Migrasi SQL/Alembic awal sesuai Bab 6 PRD & `PROJECT_SPEC.md`.
   - Skeleton FastAPI (`/health`) dan Next.js App Router + Tailwind + shadcn/ui.
 - **Anti-Stuck Guardrail:** Gunakan `.env.example` yang lengkap dan *mock flags* (`WAZUH_MODE=mock`, `LLM_MODE=mock`, `LDAP_ENABLED=false`) agar seluruh stack langsung menyala lokal tanpa perlu Active Directory atau Wazuh live terlebih dahulu.
 
@@ -616,66 +638,117 @@ Urutan sprint di bawah dirancang khusus untuk **vibe coding** agar setiap lapisa
   - Middleware RBAC FastAPI + halaman `/login` dan `/admin/users` (kelola user lokal & mapping grup LDAP) di Next.js.
 - **Definition of Done:** Login local & mock/test LDAP berhasil, user tanpa grup LDAP cocok otomatis mendapat role `OPERATOR`, dan `audit_logs` merekam event login.
 
-### Sprint 2: Wazuh Connector (Mock → Live) & Dashboard Inventory
-- **Tujuan:** Menampilkan data endpoint, CVE, dan SCA/CIS Benchmark di UI dari PostgreSQL.
+### Sprint 2: Wazuh Connector Multi-OS (Mock → Live) & Dashboard Inventory
+- **Tujuan:** Menampilkan data endpoint (`linux`, `windows`, `macos`), CVE, dan SCA/CIS Benchmark di UI dari PostgreSQL.
 - **Deliverables:**
-  - Adapter `WazuhClient` dengan interface seragam untuk mode `mock` (fixture JSON realistis Linux & Windows) dan mode `live` (Wazuh Manager REST API).
+  - Adapter `WazuhClient` dengan interface seragam untuk mode `mock` (fixture JSON realistis mencakup `linux`, `windows`, dan `macos`) dan mode `live` (Wazuh Manager REST API).
   - Endpoint `POST /api/v1/sync/wazuh`, `GET /api/v1/endpoints`, dan `GET /api/v1/findings`.
-  - Halaman UI Next.js: **Dashboard Overview**, **Endpoints Inventory**, dan **Findings Explorer** (filter CVE/SCA, severity, status).
-- **Definition of Done:** Sinkronisasi mock data mengisi PostgreSQL secara idempotent dan seluruh tabel/filter UI berfungsi mulus.
+  - Halaman UI Next.js: **Dashboard Overview**, **Endpoints Inventory**, dan **Findings Explorer** (filter `os_family`, CVE/SCA, severity, status).
+- **Definition of Done:** Sinkronisasi mock data mengisi PostgreSQL secara idempotent untuk ketiga `os_family` (`linux`, `windows`, `macos`) dan seluruh tabel/filter UI berfungsi mulus.
 
-### Sprint 3: AI Remediation Engine (LangGraph + Ollama + Pre-Backup Contract)
-- **Tujuan:** Menghasilkan skrip remediasi & rollback yang aman dan selalu mematuhi aturan *pre-change backup*.
+### Sprint 3: AI Remediation Engine Multi-OS (LangGraph + Ollama + Pre-Backup Contract)
+- **Tujuan:** Menghasilkan skrip remediasi & rollback yang aman per OS (`linux`, `windows`, `macos`) dan selalu mematuhi aturan *pre-change backup* serta batasan SIP/TCC/MDM.
 - **Deliverables:**
-  - Workflow **LangGraph** (`context_builder` → `script_generator` → `safety_validator`).
-  - Prompt template khusus Linux (Bash) dan Windows (PowerShell) yang mewajibkan blok Pre-Change Backup (`backup_path` unik per job, `backup_targets`, SHA-256) + post-validation + auto-revert + `rollback_script` terpisah.
-  - Mode `LLM_MODE=mock` untuk pengujian deterministik + mode `LLM_MODE=ollama` untuk inferensi lokal.
+  - Workflow **LangGraph** (`context_builder` → `script_generator` → `safety_validator`) dengan aturan terpisah per `target_os`:
+    - `linux`: Bash (`.sh`, `set -euo pipefail`, path absolut), backup ke `/var/backups/q-shields/<job_id>/`.
+    - `windows`: PowerShell (`.ps1`, `$ErrorActionPreference = "Stop"`, konteks `NT AUTHORITY\SYSTEM`, non-interaktif), backup ke `C:\ProgramData\Q-Shields\backups\<job_id>\`.
+    - `macos`: Shell BSD-safe (`.sh`, `set -eu`, kompatibel `zsh`/Bash 3.2, tanpa perintah khusus Linux), backup ke `/Library/Application Support/Q-Shields/backups/<job_id>/`, serta deteksi blokir SIP/TCC/MDM (`MANUAL_REQUIRED` + `manual_action_notes`).
+  - Mode `LLM_MODE=mock` untuk pengujian deterministik (termasuk skenario macOS SIP/TCC/MDM) + mode `LLM_MODE=ollama` untuk inferensi lokal.
   - Endpoint `POST /api/v1/jobs/generate`.
-- **Definition of Done:** Output AI selalu tervalidasi ke kolom `backup_path`, `backup_targets`, `rollback_script`, dan `has_pre_backup`. Pengujian negatif membuktikan skrip tanpa blok backup menghasilkan `has_pre_backup = false`.
+- **Definition of Done:** Output AI untuk `linux`, `windows`, dan `macos` lolos `safety_validator`; skrip tanpa backup menghasilkan `has_pre_backup = false`; temuan macOS yang diblokir SIP/TCC/MDM menghasilkan status `MANUAL_REQUIRED` + `has_pre_backup = false`.
 
 ### Sprint 4: Approval Queue UI & Execution / Rollback Runner
-- **Tujuan:** Menyelesaikan siklus *Human-in-the-Loop*, eksekusi terkontrol, auto-revert, dan manual rollback.
+- **Tujuan:** Menyelesaikan siklus *Human-in-the-Loop*, eksekusi terkontrol (hanya `APPROVED`), auto-revert, dan manual rollback.
 - **Deliverables:**
-  - Halaman **Approval Queue** dan **Job Detail** (menampilkan diff/kode `remediation_script`, `rollback_script`, dan status `has_pre_backup`).
-  - **Hard-lock tombol Approve** di Next.js jika `has_pre_backup === false` + validasi ulang di endpoint `POST /api/v1/jobs/{id}/approve`.
-  - Endpoint `POST /api/v1/jobs/{id}/reject`, `POST /api/v1/jobs/{id}/execute`, dan `POST /api/v1/jobs/{id}/rollback`.
-  - Execution runner (mode `mock` dan Wazuh Active Response `live`) yang menyimpan stdout/stderr ke `job_execution_logs` dan memperbarui status menjadi `COMPLETED`, `FAILED`, atau `ROLLED_BACK`.
-- **Definition of Done:** Siklus penuh *Generate → Lock Check → Approve → Execute → Auto-Revert/Manual Rollback* berjalan end-to-end dengan jejak lengkap di `job_execution_logs` dan `audit_logs`.
+  - Halaman **Approval Queue** dan **Job Detail** (menampilkan badge `target_os`, `remediation_feasibility`, `manual_action_notes`, `remediation_script`, `rollback_script`, dan status `has_pre_backup`).
+  - **Hard-lock tombol Approve** di Next.js jika `has_pre_backup === false` atau `remediation_feasibility !== 'AUTO_SAFE'` + validasi ulang di endpoint `POST /api/v1/jobs/{id}/approve`.
+  - **Execution Guard:** Tolak `POST /api/v1/jobs/{id}/execute` dengan HTTP `409 Conflict` jika status bukan `APPROVED`.
+  - Endpoint `POST /api/v1/jobs/{id}/reject` dan `POST /api/v1/jobs/{id}/rollback`.
+  - Execution runner (mode `mock` dan Wazuh Active Response `live`) yang menyimpan stdout/stderr per stage ke `job_execution_logs` dan memperbarui status menjadi `COMPLETED`, `FAILED`, atau `ROLLED_BACK`.
+- **Definition of Done:** Siklus penuh *Generate → Lock Check → Approve → Execute (Hanya APPROVED) → Auto-Revert/Manual Rollback* berjalan end-to-end dengan jejak lengkap di `job_execution_logs` dan `audit_logs`.
 
 ### Sprint 5: Integrasi Live Stack, Hardening & UAT Internal
 - **Tujuan:** Beralih dari mode `mock` ke mode `live` bersama Wazuh Manager, Ollama, dan Domain Controller internal.
 - **Deliverables:**
-  - Uji konektivitas antar Docker stack (`qshields-net`), pull model Ollama lokal (mis. `qwen2.5-coder` / `llama3.1` sesuai kapasitas GPU/CPU internal), dan verifikasi Wazuh Active Response pada 1 VM uji Linux & 1 VM uji Windows.
-  - Uji penetrasi ringan terhadap kontrol RBAC, validasi bypass `has_pre_backup`, dan keamanan kredensial LDAP.
+  - Uji konektivitas antar Docker stack (`docker-compose.wazuh.yml` & `docker-compose.app.yml` via `qshields-net`), pull model Ollama lokal, dan verifikasi Wazuh Active Response pada VM uji `linux`, `windows`, dan `macos` (jika endpoint uji macOS tersedia).
+  - Uji penetrasi ringan terhadap kontrol RBAC, validasi bypass `has_pre_backup`, validasi bypass status `APPROVED` saat eksekusi, dan keamanan kredensial LDAP.
   - Panduan deployment internal (`docs/DEPLOYMENT.md`) dan skenario UAT.
 - **Definition of Done:** Seluruh Acceptance Criteria `FR-01` s.d. `FR-09` dan `NFR-01` s.d. `NFR-06` lulus di lingkungan staging Docker internal.
 
 ---
 
-## 8. Lampiran: Referensi Arsitektur Docker & Kontrak Data
+## 8. Lampiran: Referensi Arsitektur Docker & Kontrak Data Multi-OS
 
 ### 8.1 Pemisahan Docker Compose (Konseptual)
 - **External Network Bersama:**
   ```bash
   docker network create qshields-net
   ```
-- **Stack 1 (`infra/docker-compose.wazuh.yml`):** Menjalankan `wazuh.manager` (dan komponen Wazuh lain yang dibutuhkan) yang terhubung ke `qshields-net`.
-- **Stack 2 (`infra/docker-compose.qshields.yml`):** Menjalankan `postgres`, `ollama`, `qshields-backend` (FastAPI + LangGraph), dan `qshields-frontend` (Next.js) pada `qshields-net`.
+- **Stack 1 (`infra/docker-compose.wazuh.yml`):** Menjalankan `wazuh-manager` (dan komponen Wazuh lain yang dibutuhkan) yang terhubung ke `qshields-net`.
+- **Stack 2 (`infra/docker-compose.app.yml`):** Menjalankan `postgres`, `ollama`, `qshields-backend` (FastAPI + LangGraph), dan `qshields-frontend` (Next.js) pada `qshields-net`.
 
-### 8.2 Kontrak Output Terstruktur AI (LangGraph → FastAPI)
-Berikut kontrak JSON standar yang wajib dihasilkan oleh node `script_generator` sebelum lolos `safety_validator`:
+### 8.2 Contoh Kontrak Output Terstruktur AI per OS (LangGraph → FastAPI)
 
+#### 1) `linux` (`script_type: "bash"`)
 ```json
 {
-  "target_os": "LINUX",
-  "script_type": "BASH",
-  "ai_summary": "Menonaktifkan SSH root login di /etc/ssh/sshd_config dan me-reload sshd.",
-  "backup_path": "/var/backups/q-shields/job-550e8400-e29b-41d4-a716-446655440000",
-  "backup_targets": [
-    "/etc/ssh/sshd_config"
-  ],
-  "remediation_script": "#!/usr/bin/env bash\nset -euo pipefail\nBACKUP_DIR=\"/var/backups/q-shields/job-550e8400-e29b-41d4-a716-446655440000\"\nmkdir -p \"$BACKUP_DIR\"\ncp -a /etc/ssh/sshd_config \"$BACKUP_DIR/sshd_config.bak\"\nsha256sum \"$BACKUP_DIR/sshd_config.bak\" > \"$BACKUP_DIR/manifest.sha256\"\n# Apply change + validate + auto-revert on failure...",
-  "validation_script": "#!/usr/bin/env bash\nsshd -t && grep -Eq '^PermitRootLogin\\s+no' /etc/ssh/sshd_config",
+  "target_os": "linux",
+  "script_type": "bash",
+  "remediation_feasibility": "AUTO_SAFE",
+  "manual_action_notes": null,
+  "ai_summary": "Menonaktifkan SSH root login di /etc/ssh/sshd_config dengan pre-change backup dan auto-revert.",
+  "backup_path": "/var/backups/q-shields/job-550e8400-e29b-41d4-a716-446655440000/",
+  "backup_targets": ["/etc/ssh/sshd_config"],
+  "remediation_script": "#!/usr/bin/env bash\nset -euo pipefail\n...",
+  "validation_script": "#!/usr/bin/env bash\nset -euo pipefail\n/usr/sbin/sshd -t && grep -Eq '^PermitRootLogin\\s+no' /etc/ssh/sshd_config",
   "rollback_script": "#!/usr/bin/env bash\nset -euo pipefail\nBACKUP_DIR=\"/var/backups/q-shields/job-550e8400-e29b-41d4-a716-446655440000\"\nsha256sum -c \"$BACKUP_DIR/manifest.sha256\"\ncp -a \"$BACKUP_DIR/sshd_config.bak\" /etc/ssh/sshd_config\nsystemctl reload sshd"
+}
+```
+
+#### 2) `windows` (`script_type: "powershell"`)
+```json
+{
+  "target_os": "windows",
+  "script_type": "powershell",
+  "remediation_feasibility": "AUTO_SAFE",
+  "manual_action_notes": null,
+  "ai_summary": "Menonaktifkan SMBv1 melalui HKLM registry dalam konteks NT AUTHORITY\\SYSTEM dengan reg export backup.",
+  "backup_path": "C:\\ProgramData\\Q-Shields\\backups\\job-660e8400-e29b-41d4-a716-446655440111\\",
+  "backup_targets": ["HKLM\\SYSTEM\\CurrentControlSet\\Services\\LanmanServer\\Parameters"],
+  "remediation_script": "$ErrorActionPreference = \"Stop\"\n...",
+  "validation_script": "$ErrorActionPreference = \"Stop\"\n(Get-ItemProperty -Path 'HKLM:\\SYSTEM\\CurrentControlSet\\Services\\LanmanServer\\Parameters').SMB1 -eq 0",
+  "rollback_script": "$ErrorActionPreference = \"Stop\"\n$BackupDir = \"C:\\ProgramData\\Q-Shields\\backups\\job-660e8400-e29b-41d4-a716-446655440111\"\n& reg.exe import \"$BackupDir\\LanmanServer_Parameters.reg\" | Out-Null"
+}
+```
+
+#### 3) `macos` — Kasus Aman Otomatis (`script_type: "bsd_shell"`, `AUTO_SAFE`)
+```json
+{
+  "target_os": "macos",
+  "script_type": "bsd_shell",
+  "remediation_feasibility": "AUTO_SAFE",
+  "manual_action_notes": null,
+  "ai_summary": "Mengaktifkan macOS Application Firewall dengan skrip BSD-safe dan pre-change backup plist.",
+  "backup_path": "/Library/Application Support/Q-Shields/backups/job-770e8400-e29b-41d4-a716-446655440222/",
+  "backup_targets": ["/Library/Preferences/com.apple.alf.plist"],
+  "remediation_script": "#!/bin/sh\nset -eu\n...",
+  "validation_script": "#!/bin/sh\nset -eu\n/usr/libexec/ApplicationFirewall/socketfilterfw --getglobalstate | grep -q \"enabled\"",
+  "rollback_script": "#!/bin/sh\nset -eu\nBACKUP_DIR=\"/Library/Application Support/Q-Shields/backups/job-770e8400-e29b-41d4-a716-446655440222\"\nshasum -a 256 -c \"$BACKUP_DIR/manifest.sha256\"\ncp -p \"$BACKUP_DIR/com.apple.alf.plist.bak\" /Library/Preferences/com.apple.alf.plist"
+}
+```
+
+#### 4) `macos` — Kasus Terhalang SIP / TCC / MDM (`MANUAL_OR_MDM_REQUIRED`)
+```json
+{
+  "target_os": "macos",
+  "script_type": "bsd_shell",
+  "remediation_feasibility": "MANUAL_OR_MDM_REQUIRED",
+  "manual_action_notes": "Temuan ini dilindungi oleh Apple SIP/TCC atau dikunci oleh profil MDM perusahaan. Terapkan kebijakan melalui MDM Configuration Profile (.mobileconfig) terkait atau lakukan verifikasi manual oleh Mac Admin.",
+  "ai_summary": "Remediasi otomatis tidak dapat dilakukan secara aman karena batasan SIP/TCC/MDM pada macOS.",
+  "backup_path": "/Library/Application Support/Q-Shields/backups/job-880e8400-e29b-41d4-a716-446655440333/",
+  "backup_targets": [],
+  "remediation_script": "#!/bin/sh\nset -eu\necho \"MANUAL_OR_MDM_REQUIRED: Tidak dijalankan otomatis.\" >&2\nexit 2",
+  "validation_script": "",
+  "rollback_script": "#!/bin/sh\nset -eu\necho \"Tidak ada perubahan otomatis yang dilakukan.\""
 }
 ```
