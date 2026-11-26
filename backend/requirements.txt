@@ -1,0 +1,23 @@
+# Web framework & ASGI server
+fastapi>=0.115.0
+uvicorn[standard]>=0.30.0
+
+# Database ORM, PostgreSQL driver & migrations
+sqlalchemy>=2.0.0
+psycopg2-binary>=2.9.9
+alembic>=1.13.0
+
+# Validation, settings & environment
+pydantic>=2.7.0
+pydantic-settings>=2.2.0
+python-dotenv>=1.0.1
+
+# AI Orchestration (Local Ollama via LangGraph)
+langgraph>=0.2.0
+langchain-ollama>=0.2.0
+
+# HTTP client, Domain Controller / LDAP & Auth Security
+httpx>=0.27.0
+ldap3>=2.9.1
+passlib[bcrypt]>=1.7.4
+pyjwt>=2.8.0

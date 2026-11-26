@@ -1,0 +1,106 @@
+# ==============================================================================
+# Q-Shields Application Stack (Terpisah dari docker-compose.wazuh.yml)
+# ==============================================================================
+# Cara pakai:
+#   1. Salin .env.example menjadi .env dan sesuaikan nilainya.
+#   2. Jalankan DB & Backend:
+#        docker compose -f docker-compose.app.yml up -d postgres backend
+#   3. Jalankan termasuk Ollama lokal:
+#        docker compose -f docker-compose.app.yml up -d
+#   4. Jika folder ./frontend sudah tersedia, aktifkan dengan profile:
+#        docker compose -f docker-compose.app.yml --profile frontend up -d
+# ==============================================================================
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: qshields-postgres
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-qshields}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-qshields_dev_password}
+      POSTGRES_DB: ${POSTGRES_DB:-qshields}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - qshields_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-qshields} -d ${POSTGRES_DB:-qshields}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks:
+      - qshields_net
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: qshields-backend
+    restart: unless-stopped
+    env_file:
+      - .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    volumes:
+      # Mount source backend untuk hot-reload selama fase vibe coding
+      - ./backend:/app
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    networks:
+      - qshields_net
+      # Aktifkan baris di bawah jika ingin terhubung ke stack Wazuh live
+      # - wazuh_net
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: qshields-ollama
+    restart: unless-stopped
+    # Opsional: uncomment baris di bawah jika Ollama dijalankan terpisah di host/GPU server lain
+    # profiles: ["local-llm"]
+    ports:
+      - "11434:11434"
+    volumes:
+      - qshields_ollama:/root/.ollama
+    networks:
+      - qshields_net
+
+  # Placeholder service Frontend (Next.js App Router) - aktifkan dengan --profile frontend
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: qshields-frontend
+    restart: unless-stopped
+    profiles: ["frontend"]
+    env_file:
+      - .env
+    depends_on:
+      - backend
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    networks:
+      - qshields_net
+
+volumes:
+  qshields_pgdata:
+    name: qshields_pgdata
+  qshields_ollama:
+    name: qshields_ollama
+
+networks:
+  qshields_net:
+    name: qshields_net
+    driver: bridge
+  # Opsional external network dari stack docker-compose.wazuh.yml untuk integrasi live
+  # wazuh_net:
+  #   external: true
+  #   name: wazuh_net

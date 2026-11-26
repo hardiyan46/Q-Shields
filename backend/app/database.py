@@ -25,16 +25,21 @@ class Base(DeclarativeBase):
 
 
 def get_database_url() -> str:
-    """Resolve the PostgreSQL SQLAlchemy URL from environment variables."""
-    url = os.getenv(
-        "DATABASE_URL",
-        "postgresql+psycopg://qshields:qshields@postgres:5432/qshields",
-    )
-    # Normalize plain postgres:// or postgresql:// URLs to psycopg v3 driver if unspecified
+    """Resolve the PostgreSQL SQLAlchemy URL from DATABASE_URL or POSTGRES_* env vars."""
+    url = os.getenv("DATABASE_URL")
+    if not url:
+        pg_user = os.getenv("POSTGRES_USER", "qshields")
+        pg_password = os.getenv("POSTGRES_PASSWORD", "qshields")
+        pg_host = os.getenv("POSTGRES_HOST", "postgres")
+        pg_port = os.getenv("POSTGRES_PORT", "5432")
+        pg_db = os.getenv("POSTGRES_DB", "qshields")
+        return f"postgresql+psycopg2://{pg_user}:{pg_password}@{pg_host}:{pg_port}/{pg_db}"
+
+    # Normalize postgres:// or plain postgresql:// URLs to psycopg2-binary driver
     if url.startswith("postgres://"):
-        return url.replace("postgres://", "postgresql+psycopg://", 1)
+        return url.replace("postgres://", "postgresql+psycopg2://", 1)
     if url.startswith("postgresql://"):
-        return url.replace("postgresql://", "postgresql+psycopg://", 1)
+        return url.replace("postgresql://", "postgresql+psycopg2://", 1)
     return url
 
 
