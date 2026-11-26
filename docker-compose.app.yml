@@ -70,16 +70,17 @@ services:
     networks:
       - qshields_net
 
-  # Placeholder service Frontend (Next.js App Router) - aktifkan dengan --profile frontend
+  # Frontend Next.js App Router (port 3000)
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
     container_name: qshields-frontend
     restart: unless-stopped
-    profiles: ["frontend"]
     env_file:
       - .env
+    environment:
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
     depends_on:
       - backend
     ports:
