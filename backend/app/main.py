@@ -1,4 +1,4 @@
-"""Minimal FastAPI entrypoint for Q-Shields Phase 1."""
+"""FastAPI application entrypoint for Q-Shields Phase 1."""
 
 from __future__ import annotations
 
@@ -7,11 +7,13 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI, HTTPException, status
+from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from .database import get_db, init_db
+from .routers import assets, findings
 
 
 @asynccontextmanager
@@ -27,6 +29,21 @@ app = FastAPI(
     version="0.1.0",
     lifespan=lifespan,
 )
+
+# Configure CORS so Next.js frontend (http://localhost:3000) can call the API during development
+raw_origins = os.getenv("CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000")
+allowed_origins = [origin.strip() for origin in raw_origins.split(",") if origin.strip()]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=allowed_origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+app.include_router(assets.router)
+app.include_router(findings.router)
 
 
 @app.get("/health", tags=["Health"])

@@ -1,0 +1,167 @@
+{
+  "endpoints": [
+    {
+      "wazuh_agent_id": "001",
+      "hostname": "srv-app-ubuntu01",
+      "ip_address": "10.10.20.11",
+      "os_family": "linux",
+      "os_name": "Ubuntu",
+      "os_version": "22.04.4 LTS",
+      "architecture": "x86_64",
+      "agent_version": "4.9.0",
+      "status": "ACTIVE",
+      "compliance_score": 72.5,
+      "findings": [
+        {
+          "source_type": "CVE",
+          "external_id": "CVE-2024-6387",
+          "title": "OpenSSH Server regreSSHion Remote Code Execution (openssh-server)",
+          "description": "Race condition in sshd signal handler on glibc-based Linux systems allows unauthenticated remote code execution as root.",
+          "severity": "CRITICAL",
+          "status": "OPEN",
+          "remediation_hint": "Upgrade openssh-server via apt-get to patched Ubuntu 22.04 LTS security release and verify sshd service health.",
+          "raw_payload": {
+            "package": "openssh-server",
+            "installed_version": "1:8.9p1-3ubuntu0.6",
+            "fixed_version": "1:8.9p1-3ubuntu0.10",
+            "cvss_score": 8.1
+          }
+        },
+        {
+          "source_type": "CVE",
+          "external_id": "CVE-2024-5535",
+          "title": "OpenSSL SSL_select_next_proto Buffer Overread Vulnerability (openssl)",
+          "description": "Calling SSL_select_next_proto with an empty supported client list can trigger a buffer overread.",
+          "severity": "HIGH",
+          "status": "OPEN",
+          "remediation_hint": "Upgrade openssl and libssl3 packages to latest patched Ubuntu 22.04 LTS release.",
+          "raw_payload": {
+            "package": "openssl",
+            "installed_version": "3.0.2-0ubuntu1.15",
+            "fixed_version": "3.0.2-0ubuntu1.17",
+            "cvss_score": 7.5
+          }
+        },
+        {
+          "source_type": "SCA_CIS",
+          "external_id": "CIS-UBUNTU22-5.2.10",
+          "title": "Ensure SSH root login is disabled (PermitRootLogin yes)",
+          "description": "The PermitRootLogin parameter in /etc/ssh/sshd_config is currently set to 'yes', violating CIS Ubuntu Linux 22.04 LTS Benchmark 5.2.10.",
+          "severity": "HIGH",
+          "status": "OPEN",
+          "remediation_hint": "Backup /etc/ssh/sshd_config, set PermitRootLogin no, validate syntax with /usr/sbin/sshd -t, and reload sshd.",
+          "raw_payload": {
+            "policy_id": "cis_ubuntu22-04",
+            "config_file": "/etc/ssh/sshd_config",
+            "observed_value": "PermitRootLogin yes",
+            "expected_value": "PermitRootLogin no"
+          }
+        }
+      ]
+    },
+    {
+      "wazuh_agent_id": "002",
+      "hostname": "win-finance-02",
+      "ip_address": "10.10.30.25",
+      "os_family": "windows",
+      "os_name": "Microsoft Windows Server 2022 Standard",
+      "os_version": "21H2 (Build 20348)",
+      "architecture": "x86_64",
+      "agent_version": "4.9.0",
+      "status": "ACTIVE",
+      "compliance_score": 64.0,
+      "findings": [
+        {
+          "source_type": "CVE",
+          "external_id": "CVE-2024-38063",
+          "title": "Windows TCP/IP IPv6 Remote Code Execution Vulnerability",
+          "description": "Integer underflow in Windows TCP/IP stack processing crafted IPv6 packets allows unauthenticated remote code execution.",
+          "severity": "CRITICAL",
+          "status": "OPEN",
+          "remediation_hint": "Install Microsoft Security Update KB5041578 (or newer) or disable IPv6 on non-essential interfaces via registry/NetAdapterBinding.",
+          "raw_payload": {
+            "component": "tcpip.sys",
+            "kb_missing": "KB5041578",
+            "cvss_score": 9.8
+          }
+        },
+        {
+          "source_type": "SCA_CIS",
+          "external_id": "CIS-WIN2022-18.4.4",
+          "title": "Ensure SMBv1 protocol is disabled on Server service",
+          "description": "Registry key HKLM\\SYSTEM\\CurrentControlSet\\Services\\LanmanServer\\Parameters\\SMB1 is missing or enabled (non-zero), exposing legacy SMBv1 attack surface.",
+          "severity": "HIGH",
+          "status": "OPEN",
+          "remediation_hint": "Export registry backup via reg.exe, set HKLM\\SYSTEM\\CurrentControlSet\\Services\\LanmanServer\\Parameters\\SMB1 = 0 (DWORD), and disable SMB1Protocol feature.",
+          "raw_payload": {
+            "policy_id": "cis_win2022",
+            "registry_key": "HKLM\\SYSTEM\\CurrentControlSet\\Services\\LanmanServer\\Parameters",
+            "registry_value": "SMB1",
+            "observed_value": 1,
+            "expected_value": 0
+          }
+        }
+      ]
+    },
+    {
+      "wazuh_agent_id": "003",
+      "hostname": "mac-exec-01",
+      "ip_address": "10.10.40.15",
+      "os_family": "macos",
+      "os_name": "macOS Sequoia",
+      "os_version": "15.1.1",
+      "architecture": "arm64",
+      "agent_version": "4.9.0",
+      "status": "ACTIVE",
+      "compliance_score": 78.0,
+      "findings": [
+        {
+          "source_type": "CVE",
+          "external_id": "CVE-2024-7264",
+          "title": "curl ASN.1 date parser out-of-bounds read vulnerability (Homebrew curl)",
+          "description": "Vulnerable Homebrew curl version installed under /opt/homebrew/bin/curl allows out-of-bounds read when parsing crafted ASN.1 certificate dates.",
+          "severity": "HIGH",
+          "status": "OPEN",
+          "remediation_hint": "Upgrade Homebrew curl package cleanly without touching SIP-protected /usr/bin/curl.",
+          "raw_payload": {
+            "package": "curl",
+            "package_manager": "homebrew",
+            "installed_version": "8.7.1",
+            "fixed_version": "8.9.1",
+            "cvss_score": 7.5
+          }
+        },
+        {
+          "source_type": "SCA_CIS",
+          "external_id": "CIS-MACOS15-2.2.1",
+          "title": "Ensure macOS Application Firewall is enabled",
+          "description": "Application Firewall globalstate in /Library/Preferences/com.apple.alf.plist is currently disabled.",
+          "severity": "HIGH",
+          "status": "OPEN",
+          "remediation_hint": "Backup /Library/Preferences/com.apple.alf.plist and enable firewall via /usr/libexec/ApplicationFirewall/socketfilterfw --setglobalstate on.",
+          "raw_payload": {
+            "policy_id": "cis_apple_macos_15",
+            "plist_path": "/Library/Preferences/com.apple.alf.plist",
+            "observed_value": "disabled",
+            "expected_value": "enabled"
+          }
+        },
+        {
+          "source_type": "SCA_CIS",
+          "external_id": "CIS-MACOS15-2.6.1.1",
+          "title": "Ensure Gatekeeper and System Integrity Protection (SIP) / MDM Profile Policy is enforced",
+          "description": "Security control is governed by Apple System Integrity Protection (SIP) and corporate MDM Configuration Profile lock; local shell scripts cannot override SIP or MDM-managed payloads.",
+          "severity": "MEDIUM",
+          "status": "OPEN",
+          "remediation_hint": "Blocked by Apple SIP/MDM. Enforce via corporate MDM Configuration Profile (.mobileconfig) and verify manually on device.",
+          "raw_payload": {
+            "policy_id": "cis_apple_macos_15",
+            "requires_manual_mdm_hint": true,
+            "policy_blocker": "SIP/MDM",
+            "mdm_payload_type": "com.apple.security.firewall / com.apple.systempolicy.control"
+          }
+        }
+      ]
+    }
+  ]
+}
