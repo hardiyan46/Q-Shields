@@ -11,6 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from .models import (
     AuthProvider,
     EndpointStatus,
+    ExecutionActionType,
     FindingSource,
     FindingStatus,
     IsolationStatus,
@@ -286,3 +287,51 @@ class RemediationJobOut(BaseModel):
     rejection_reason: str | None = None
     created_at: datetime
     approved_at: datetime | None = None
+
+
+class ApproveJobRequest(BaseModel):
+    """Payload for APPROVER/ADMIN approving a PENDING_APPROVAL job."""
+
+    execute_immediately: bool = True
+
+
+class RejectJobRequest(BaseModel):
+    """Payload for APPROVER/ADMIN rejecting a PENDING_APPROVAL job with mandatory reason."""
+
+    rejection_reason: str = Field(min_length=5, max_length=2000)
+
+
+class ExecutionLogOut(BaseModel):
+    """Serialized REMEDIATE or ROLLBACK execution log record."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    job_id: uuid.UUID
+    action_type: ExecutionActionType
+    triggered_by_id: uuid.UUID
+    exit_code: int | None = None
+    stdout: str | None = None
+    stderr: str | None = None
+    executed_at: datetime
+
+
+class FindingBriefOut(BaseModel):
+    """Lightweight finding metadata embedded in approval queue and job details."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    source_type: FindingSource
+    external_id: str
+    title: str
+    severity: SeverityLevel
+    status: FindingStatus
+
+
+class RemediationJobDetailOut(RemediationJobOut):
+    """Detailed remediation job including endpoint, finding, and execution logs."""
+
+    endpoint: EndpointBriefOut | None = None
+    finding: FindingBriefOut | None = None
+    execution_logs: list[ExecutionLogOut] = Field(default_factory=list)
