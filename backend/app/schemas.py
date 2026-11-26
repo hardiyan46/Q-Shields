@@ -14,7 +14,9 @@ from .models import (
     FindingSource,
     FindingStatus,
     IsolationStatus,
+    JobStatus,
     OSFamily,
+    ScriptLanguage,
     SeverityLevel,
     UserRole,
 )
@@ -222,3 +224,65 @@ class DashboardSummaryOut(BaseModel):
     open_findings_total: int
     open_findings_by_severity: dict[str, int]
     average_compliance_score: float | None = None
+
+
+# ==============================================================================
+# AI REMEDIATION STRUCTURED OUTPUT & JOB SCHEMAS
+# ==============================================================================
+
+
+class RemediationDraftSchema(BaseModel):
+    """Structured output contract returned by Ollama LLM via LangGraph."""
+
+    remediation_script: str = Field(
+        description="Complete OS-native script with pre-change backup, remediation, validation, and auto-revert."
+    )
+    rollback_script: str = Field(
+        description="Standalone rollback script referencing the exact job backup_path to restore prior state."
+    )
+    ai_explanation: str = Field(
+        description="Clear explanation of what the script changes, validates, and backs up (or why manual/MDM is required)."
+    )
+    risk_level: Literal["LOW", "MEDIUM", "HIGH"] = Field(
+        description="Operational risk level of applying this remediation."
+    )
+    requires_reboot: bool = Field(
+        description="Whether a system reboot is required after remediation."
+    )
+    requires_manual_mdm: bool = Field(
+        description="True if macOS SIP, TCC, or MDM policy blocks safe automated CLI remediation."
+    )
+    backup_targets: list[str] = Field(
+        default_factory=list,
+        description="List of config files, registry keys, plists, or package snapshots backed up before changes.",
+    )
+
+
+class RemediationJobOut(BaseModel):
+    """Serialized remediation job returned to Swagger UI and Next.js frontend."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    endpoint_id: uuid.UUID
+    finding_id: uuid.UUID
+    target_os: OSFamily
+    script_language: ScriptLanguage
+    remediation_script: str
+    rollback_script: str
+    ai_explanation: str
+    risk_level: str
+    requires_reboot: bool
+    requires_manual_mdm: bool
+    backup_path: str
+    backup_targets: list[str]
+    has_pre_backup: bool
+    status: JobStatus
+    linter_status: str
+    linter_report: dict[str, Any] | None = None
+    is_canary: bool
+    requested_by_id: uuid.UUID
+    approved_by_id: uuid.UUID | None = None
+    rejection_reason: str | None = None
+    created_at: datetime
+    approved_at: datetime | None = None

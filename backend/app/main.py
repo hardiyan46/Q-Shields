@@ -13,7 +13,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from .database import SessionLocal, get_db, init_db
-from .routers import assets, auth, findings, users
+from .routers import assets, auth, findings, remediations, users
 from .services.seed_admin import seed_initial_admin
 
 
@@ -49,6 +49,7 @@ app.include_router(auth.router)
 app.include_router(users.router)
 app.include_router(assets.router)
 app.include_router(findings.router)
+app.include_router(remediations.router)
 
 
 @app.get("/health", tags=["Health"])
