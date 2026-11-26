@@ -1,21 +1,124 @@
-"""Pydantic v2 response schemas for Q-Shields assets, findings, sync, and dashboard."""
+"""Pydantic v2 schemas for Q-Shields auth, users, LDAP settings, assets, findings, and sync."""
 
 from __future__ import annotations
 
 import uuid
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from .models import (
+    AuthProvider,
     EndpointStatus,
     FindingSource,
     FindingStatus,
     IsolationStatus,
     OSFamily,
     SeverityLevel,
+    UserRole,
 )
+
+
+# ==============================================================================
+# AUTHENTICATION, USER MANAGEMENT & LDAP SETTINGS SCHEMAS
+# ==============================================================================
+
+AuthMode = Literal["AUTO", "LOCAL", "LDAP"]
+
+
+class LoginRequest(BaseModel):
+    """Hybrid login payload supporting AUTO, LOCAL, or LDAP mode."""
+
+    username: str = Field(min_length=1, max_length=100)
+    password: str = Field(min_length=1, max_length=256)
+    auth_mode: AuthMode = "AUTO"
+
+
+class UserOut(BaseModel):
+    """Public user profile returned by API (never exposes password_hash)."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    username: str
+    email: str | None = None
+    full_name: str
+    auth_provider: AuthProvider
+    ldap_dn: str | None = None
+    role: UserRole
+    is_active: bool
+    last_login_at: datetime | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class TokenResponse(BaseModel):
+    """JWT access token + authenticated user profile."""
+
+    access_token: str
+    token_type: str = "bearer"
+    user: UserOut
+
+
+class UserCreateLocal(BaseModel):
+    """Payload for ADMIN creating a new LOCAL user account."""
+
+    username: str = Field(min_length=2, max_length=100)
+    password: str = Field(min_length=8, max_length=128)
+    full_name: str = Field(min_length=1, max_length=150)
+    email: str | None = Field(default=None, max_length=255)
+    role: UserRole = UserRole.OPERATOR
+    is_active: bool = True
+
+
+class UserUpdate(BaseModel):
+    """Payload for ADMIN updating a user's RBAC role, active status, or profile."""
+
+    role: UserRole | None = None
+    is_active: bool | None = None
+    full_name: str | None = Field(default=None, min_length=1, max_length=150)
+    email: str | None = Field(default=None, max_length=255)
+
+
+class LdapConfigOut(BaseModel):
+    """LDAP configuration response with bind password masked."""
+
+    id: uuid.UUID | None = None
+    server_url: str
+    bind_dn: str
+    bind_password_masked: str | None = None
+    has_bind_password: bool = False
+    base_dn: str
+    user_search_filter: str
+    group_operator_dn: str | None = None
+    group_approver_dn: str | None = None
+    group_admin_dn: str | None = None
+    is_enabled: bool
+    source: Literal["database", "environment"] = "database"
+    updated_at: datetime | None = None
+
+
+class LdapConfigUpdate(BaseModel):
+    """Payload for ADMIN updating Domain Controller / LDAP settings."""
+
+    server_url: str = Field(min_length=1, max_length=255)
+    bind_dn: str = Field(min_length=1)
+    bind_password: str | None = Field(
+        default=None,
+        description="Leave null/empty to keep the existing stored bind password.",
+    )
+    base_dn: str = Field(min_length=1)
+    user_search_filter: str = Field(default="(sAMAccountName={username})", min_length=1, max_length=255)
+    group_operator_dn: str | None = None
+    group_approver_dn: str | None = None
+    group_admin_dn: str | None = None
+    is_enabled: bool = False
+
+
+# ==============================================================================
+# ASSETS, FINDINGS, SYNC & DASHBOARD SCHEMAS
+# ==============================================================================
 
 
 class SeveritySummary(BaseModel):

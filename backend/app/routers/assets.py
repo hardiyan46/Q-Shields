@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
+from ..core.security import get_current_user
 from ..database import get_db
 from ..models import (
     Endpoint,
@@ -16,6 +17,7 @@ from ..models import (
     FindingStatus,
     OSFamily,
     SeverityLevel,
+    User,
 )
 from ..schemas import (
     DashboardSummaryOut,
@@ -25,21 +27,41 @@ from ..schemas import (
     SeveritySummary,
     SyncResultOut,
 )
+from ..services.audit import record_audit_log
 from ..services.wazuh_sync import WazuhLiveSyncNotImplementedError, sync_wazuh_data
 
 router = APIRouter(prefix="/api", tags=["Assets & Sync"])
 
 
 @router.post("/sync/wazuh", response_model=SyncResultOut)
-def trigger_wazuh_sync(db: Session = Depends(get_db)) -> SyncResultOut:
+def trigger_wazuh_sync(
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> SyncResultOut:
     """Trigger idempotent Wazuh synchronization (mock or live) into PostgreSQL."""
     try:
-        return sync_wazuh_data(db)
+        result = sync_wazuh_data(db)
     except WazuhLiveSyncNotImplementedError as exc:
         raise HTTPException(
             status_code=status.HTTP_501_NOT_IMPLEMENTED,
             detail=str(exc),
         ) from exc
+
+    record_audit_log(
+        db,
+        action="SYNC_WAZUH",
+        resource_type="wazuh_sync",
+        actor_user=current_user,
+        ip_address=request.client.host if request.client else None,
+        details={
+            "mode": result.mode,
+            "endpoints_synced": result.endpoints_synced,
+            "findings_synced": result.findings_synced,
+        },
+        commit=True,
+    )
+    return result
 
 
 @router.get("/endpoints", response_model=list[EndpointOut])
@@ -53,6 +75,7 @@ def list_endpoints(
     search: str | None = Query(default=None, description="Search by hostname, agent ID, or IP"),
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=50, ge=1, le=200),
+    _current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> list[EndpointOut]:
     """List managed endpoints with filters, pagination, and OPEN finding counts."""
@@ -99,6 +122,7 @@ def list_endpoints(
 @router.get("/endpoints/{endpoint_id}", response_model=EndpointDetailOut)
 def get_endpoint_detail(
     endpoint_id: uuid.UUID,
+    _current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> EndpointDetailOut:
     """Get a single endpoint with its severity summary and findings list."""
@@ -148,7 +172,10 @@ def get_endpoint_detail(
 
 
 @router.get("/dashboard/summary", response_model=DashboardSummaryOut)
-def get_dashboard_summary(db: Session = Depends(get_db)) -> DashboardSummaryOut:
+def get_dashboard_summary(
+    _current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> DashboardSummaryOut:
     """Return aggregated multi-OS endpoint, open finding severity, and compliance metrics."""
     endpoints_by_os: dict[str, int] = {os_item.value: 0 for os_item in OSFamily}
     os_rows = db.execute(

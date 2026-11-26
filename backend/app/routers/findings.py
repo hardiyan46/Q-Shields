@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session, selectinload
 
+from ..core.security import get_current_user
 from ..database import get_db
 from ..models import (
     Endpoint,
@@ -16,6 +17,7 @@ from ..models import (
     FindingStatus,
     OSFamily,
     SeverityLevel,
+    User,
 )
 from ..schemas import EndpointBriefOut, FindingDetailOut, FindingOut
 
@@ -32,6 +34,7 @@ def list_findings(
     search: str | None = Query(default=None, description="Search by external ID, title, or description"),
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=50, ge=1, le=200),
+    _current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> list[FindingOut]:
     """List CVE and SCA_CIS findings with multi-criteria filtering and pagination."""
@@ -67,6 +70,7 @@ def list_findings(
 @router.get("/findings/{finding_id}", response_model=FindingDetailOut)
 def get_finding_detail(
     finding_id: uuid.UUID,
+    _current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> FindingDetailOut:
     """Get complete details for a single finding along with its target endpoint."""

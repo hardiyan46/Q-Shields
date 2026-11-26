@@ -12,14 +12,17 @@ from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from .database import get_db, init_db
-from .routers import assets, findings
+from .database import SessionLocal, get_db, init_db
+from .routers import assets, auth, findings, users
+from .services.seed_admin import seed_initial_admin
 
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
-    """Initialize PostgreSQL tables on startup via SQLAlchemy Base.metadata.create_all."""
+    """Initialize PostgreSQL tables and seed initial local ADMIN user on startup."""
     init_db()
+    with SessionLocal() as db:
+        seed_initial_admin(db)
     yield
 
 
@@ -42,6 +45,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(auth.router)
+app.include_router(users.router)
 app.include_router(assets.router)
 app.include_router(findings.router)
 
