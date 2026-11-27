@@ -126,9 +126,9 @@ if ($upExit -ne 0) {
     $prevEap = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
     Write-Host "--- qshields-wazuh-certs ---" -ForegroundColor DarkYellow
-    docker logs --tail 40 qshields-wazuh-certs 2>&1 | Out-Host
+    docker logs --tail 40 qshields-wazuh-certs 2>&1 | ForEach-Object { "$_" }
     Write-Host "--- qshields-wazuh-indexer ---" -ForegroundColor DarkYellow
-    docker logs --tail 60 qshields-wazuh-indexer 2>&1 | Out-Host
+    docker logs --tail 60 qshields-wazuh-indexer 2>&1 | ForEach-Object { "$_" }
     $ErrorActionPreference = $prevEap
     exit 1
 }
@@ -152,7 +152,7 @@ while ($true) {
             Write-Host "[ERROR] Container init qshields-wazuh-certs gagal (exit $($certsObj.State.ExitCode)). Log:" -ForegroundColor Red
             $prevEap = $ErrorActionPreference
             $ErrorActionPreference = "Continue"
-            docker logs --tail 40 qshields-wazuh-certs 2>&1 | Out-Host
+            docker logs --tail 40 qshields-wazuh-certs 2>&1 | ForEach-Object { "$_" }
             $ErrorActionPreference = $prevEap
             exit 1
         }
@@ -189,8 +189,8 @@ while ($true) {
         Write-Host "[ERROR] Timeout menunggu container Wazuh menjadi healthy setelah $TimeoutSeconds detik." -ForegroundColor Red
         $prevEap = $ErrorActionPreference
         $ErrorActionPreference = "Continue"
-        docker compose --env-file "$EnvFile" -f "$ComposeFile" ps 2>&1 | Out-Host
-        docker logs --tail 60 qshields-wazuh-indexer 2>&1 | Out-Host
+        docker compose --env-file "$EnvFile" -f "$ComposeFile" ps 2>&1 | ForEach-Object { "$_" }
+        docker logs --tail 60 qshields-wazuh-indexer 2>&1 | ForEach-Object { "$_" }
         $ErrorActionPreference = $prevEap
         exit 1
     }
