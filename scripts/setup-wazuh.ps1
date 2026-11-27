@@ -4,6 +4,21 @@
 
 $ErrorActionPreference = "Stop"
 
+function Invoke-DockerQuiet {
+    param([string[]]$DockerArgs)
+    $prevEap = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try {
+        $output = & docker @DockerArgs 2>$null
+        return @{
+            ExitCode = $LASTEXITCODE
+            Output   = ($output -join "`n")
+        }
+    } finally {
+        $ErrorActionPreference = $prevEap
+    }
+}
+
 $RepoRoot = Split-Path -Parent $PSScriptRoot
 $EnvFile = Join-Path $RepoRoot ".env"
 $EnvExample = Join-Path $RepoRoot ".env.example"
@@ -17,8 +32,8 @@ if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
     exit 1
 }
 
-docker compose version | Out-Null
-if ($LASTEXITCODE -ne 0) {
+$composeVer = Invoke-DockerQuiet @("compose", "version")
+if ($composeVer.ExitCode -ne 0) {
     Write-Error "Docker Compose v2 tidak tersedia ('docker compose')."
     exit 1
 }
@@ -68,14 +83,18 @@ foreach ($varName in $RequiredVars) {
 Write-Host "[OK] Seluruh variabel wajib Wazuh pada .env valid." -ForegroundColor Green
 
 # 3. Bersihkan network wazuh_net lama/yatim agar tidak memicu warning project mismatch
-$netInspect = docker network inspect wazuh_net 2>$null
-if ($LASTEXITCODE -eq 0 -and $netInspect) {
-    $netProject = docker network inspect -f '{{index .Labels "com.docker.compose.project"}}' wazuh_net 2>$null
+$netInspect = Invoke-DockerQuiet @("network", "inspect", "wazuh_net")
+if ($netInspect.ExitCode -eq 0 -and -not [string]::IsNullOrWhiteSpace($netInspect.Output)) {
+    $netObj = ($netInspect.Output | ConvertFrom-Json)[0]
+    $netProject = if ($netObj.Labels) { $netObj.Labels.'com.docker.compose.project' } else { $null }
     if ($netProject -ne "qshields-wazuh") {
-        $attachedCount = docker network inspect -f '{{len .Containers}}' wazuh_net 2>$null
-        if ($attachedCount -eq "0") {
+        $attachedCount = if ($netObj.Containers) { @($netObj.Containers.PSObject.Properties).Count } else { 0 }
+        if ($attachedCount -eq 0) {
             Write-Host "[INFO] Menghapus network wazuh_net lama (project='$netProject') agar dibuat ulang bersih untuk 'qshields-wazuh'..." -ForegroundColor Yellow
-            docker network rm wazuh_net | Out-Null
+            $rmNet = Invoke-DockerQuiet @("network", "rm", "wazuh_net")
+            if ($rmNet.ExitCode -ne 0) {
+                Write-Host "[WARN] Tidak dapat menghapus network wazuh_net lama; Compose akan mencoba memakai network yang ada." -ForegroundColor Yellow
+            }
         } else {
             Write-Host "[WARN] Network wazuh_net sudah ada (project='$netProject') dan sedang dipakai $attachedCount container." -ForegroundColor Yellow
             Write-Host "       Jika ingin bersih penuh, jalankan 'docker compose -f docker-compose.app.yml down' terlebih dahulu." -ForegroundColor Yellow
@@ -85,18 +104,32 @@ if ($LASTEXITCODE -eq 0 -and $netInspect) {
 
 # 4. Atur vm.max_map_count=262144 di backend WSL2 Docker Desktop
 Write-Host "[INFO] Mengatur vm.max_map_count=262144 di Docker Desktop (WSL2)..." -ForegroundColor Cyan
+$prevEap = $ErrorActionPreference
+$ErrorActionPreference = "Continue"
 wsl -d docker-desktop sysctl -w vm.max_map_count=262144
-if ($LASTEXITCODE -ne 0) {
+$wslExit = $LASTEXITCODE
+$ErrorActionPreference = $prevEap
+if ($wslExit -ne 0) {
     Write-Error "Gagal mengatur vm.max_map_count melalui 'wsl -d docker-desktop'. Pastikan Docker Desktop berbasis WSL2 sudah berjalan."
     exit 1
 }
 
 # 5. Jalankan stack Wazuh (sertifikat TLS dibuat otomatis oleh service wazuh.certs bila belum ada)
 Write-Host "[INFO] Menjalankan Docker Compose stack Wazuh (name: qshields-wazuh)..." -ForegroundColor Cyan
+$prevEap = $ErrorActionPreference
+$ErrorActionPreference = "Continue"
 docker compose --env-file "$EnvFile" -f "$ComposeFile" up -d
-if ($LASTEXITCODE -ne 0) {
-    Write-Host "[ERROR] Stack Wazuh gagal start. Menampilkan 60 baris log terakhir qshields-wazuh-indexer:" -ForegroundColor Red
-    docker logs --tail 60 qshields-wazuh-indexer 2>$null
+$upExit = $LASTEXITCODE
+$ErrorActionPreference = $prevEap
+if ($upExit -ne 0) {
+    Write-Host "[ERROR] Stack Wazuh gagal start. Menampilkan log terakhir qshields-wazuh-certs & qshields-wazuh-indexer:" -ForegroundColor Red
+    $prevEap = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    Write-Host "--- qshields-wazuh-certs ---" -ForegroundColor DarkYellow
+    docker logs --tail 40 qshields-wazuh-certs 2>&1 | Out-Host
+    Write-Host "--- qshields-wazuh-indexer ---" -ForegroundColor DarkYellow
+    docker logs --tail 60 qshields-wazuh-indexer 2>&1 | Out-Host
+    $ErrorActionPreference = $prevEap
     exit 1
 }
 
@@ -112,18 +145,28 @@ $Elapsed = 0
 
 Write-Host "[INFO] Menunggu seluruh container Wazuh berstatus 'healthy' (maks $TimeoutSeconds detik)..." -ForegroundColor Cyan
 while ($true) {
-    $certsStatus = docker inspect -f '{{.State.Status}}:{{.State.ExitCode}}' qshields-wazuh-certs 2>$null
-    if ($certsStatus -and $certsStatus.StartsWith("exited:") -and $certsStatus -ne "exited:0") {
-        Write-Host "[ERROR] Container init qshields-wazuh-certs gagal ($certsStatus). Log:" -ForegroundColor Red
-        docker logs --tail 40 qshields-wazuh-certs
-        exit 1
+    $certsRes = Invoke-DockerQuiet @("inspect", "qshields-wazuh-certs")
+    if ($certsRes.ExitCode -eq 0 -and -not [string]::IsNullOrWhiteSpace($certsRes.Output)) {
+        $certsObj = ($certsRes.Output | ConvertFrom-Json)[0]
+        if ($certsObj.State.Status -eq "exited" -and $certsObj.State.ExitCode -ne 0) {
+            Write-Host "[ERROR] Container init qshields-wazuh-certs gagal (exit $($certsObj.State.ExitCode)). Log:" -ForegroundColor Red
+            $prevEap = $ErrorActionPreference
+            $ErrorActionPreference = "Continue"
+            docker logs --tail 40 qshields-wazuh-certs 2>&1 | Out-Host
+            $ErrorActionPreference = $prevEap
+            exit 1
+        }
     }
 
     $allHealthy = $true
     $parts = @()
     foreach ($svc in $Services) {
-        $health = docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' $svc 2>$null
-        if (-not $health) { $health = "not-found" }
+        $svcRes = Invoke-DockerQuiet @("inspect", $svc)
+        $health = "not-found"
+        if ($svcRes.ExitCode -eq 0 -and -not [string]::IsNullOrWhiteSpace($svcRes.Output)) {
+            $svcObj = ($svcRes.Output | ConvertFrom-Json)[0]
+            $health = if ($svcObj.State.Health) { $svcObj.State.Health.Status } else { $svcObj.State.Status }
+        }
         $parts += "$svc=$health"
         if ($health -ne "healthy") {
             $allHealthy = $false
@@ -144,8 +187,11 @@ while ($true) {
 
     if ($Elapsed -ge $TimeoutSeconds) {
         Write-Host "[ERROR] Timeout menunggu container Wazuh menjadi healthy setelah $TimeoutSeconds detik." -ForegroundColor Red
-        docker compose --env-file "$EnvFile" -f "$ComposeFile" ps
-        docker logs --tail 60 qshields-wazuh-indexer 2>$null
+        $prevEap = $ErrorActionPreference
+        $ErrorActionPreference = "Continue"
+        docker compose --env-file "$EnvFile" -f "$ComposeFile" ps 2>&1 | Out-Host
+        docker logs --tail 60 qshields-wazuh-indexer 2>&1 | Out-Host
+        $ErrorActionPreference = $prevEap
         exit 1
     }
 
