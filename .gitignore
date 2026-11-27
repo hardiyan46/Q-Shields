@@ -1,0 +1,24 @@
+# Environment secrets (jangan pernah commit kredensial asli)
+.env
+.env.local
+.env.*.local
+
+# Generated Wazuh internal TLS certificates & private keys
+wazuh/certs/
+
+# Python / Backend artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+.pytest_cache/
+
+# Next.js / Frontend artifacts
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+
+# OS / Editor metadata
+.DS_Store
+*:Zone.Identifier

@@ -3,12 +3,10 @@
 # ==============================================================================
 # Cara pakai:
 #   1. Salin .env.example menjadi .env dan sesuaikan nilainya.
-#   2. Jalankan DB & Backend:
-#        docker compose -f docker-compose.app.yml up -d postgres backend
-#   3. Jalankan termasuk Ollama lokal:
-#        docker compose -f docker-compose.app.yml up -d
-#   4. Jika folder ./frontend sudah tersedia, aktifkan dengan profile:
-#        docker compose -f docker-compose.app.yml --profile frontend up -d
+#   2. Pastikan network `wazuh_net` sudah ada (dari `docker compose -f docker-compose.wazuh.yml up -d`
+#      atau buat manual dengan `docker network create wazuh_net` jika running mode mock standalone).
+#   3. Jalankan stack aplikasi Q-Shields (postgres, backend, ollama, frontend):
+#        docker compose -f docker-compose.app.yml up -d --build
 # ==============================================================================
 
 services:
@@ -54,8 +52,8 @@ services:
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
     networks:
       - qshields_net
-      # Aktifkan baris di bawah jika ingin terhubung ke stack Wazuh live
-      # - wazuh_net
+      # Hanya layanan backend yang terhubung ke wazuh_net untuk akses internal https://wazuh.manager:55000
+      - wazuh_net
 
   ollama:
     image: ollama/ollama:latest
@@ -101,7 +99,7 @@ networks:
   qshields_net:
     name: qshields_net
     driver: bridge
-  # Opsional external network dari stack docker-compose.wazuh.yml untuk integrasi live
-  # wazuh_net:
-  #   external: true
-  #   name: wazuh_net
+  # External network dari stack docker-compose.wazuh.yml (hanya dipakai oleh service backend)
+  wazuh_net:
+    external: true
+    name: wazuh_net
