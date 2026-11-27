@@ -75,12 +75,12 @@ services:
       test:
         [
           "CMD-SHELL",
-          "curl -sk -u \"${INDEXER_USERNAME:-admin}:${INDEXER_PASSWORD:-SecretPassword}\" https://localhost:9200/_cluster/health | grep -qE '\"status\":\"(green|yellow)\"'",
+          "(curl -sk -u \"${INDEXER_USERNAME:-admin}:${INDEXER_PASSWORD:-SecretPassword}\" https://localhost:9200/_cluster/health || curl -sk --cert /usr/share/wazuh-indexer/certs/admin.pem --key /usr/share/wazuh-indexer/certs/admin-key.pem https://localhost:9200/_cluster/health) | grep -qE '\"status\":\"(green|yellow)\"'",
         ]
       interval: 15s
       timeout: 10s
-      retries: 15
-      start_period: 90s
+      retries: 20
+      start_period: 120s
     networks:
       - wazuh_net
 

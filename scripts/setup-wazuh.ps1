@@ -81,6 +81,10 @@ foreach ($varName in $RequiredVars) {
     }
 }
 Write-Host "[OK] Seluruh variabel wajib Wazuh pada .env valid." -ForegroundColor Green
+if ($EnvMap["INDEXER_PASSWORD"] -ne "SecretPassword") {
+    Write-Host "[WARN] INDEXER_PASSWORD di .env berbeda dari default bawaan image Wazuh 4.9.2 ('SecretPassword')." -ForegroundColor Yellow
+    Write-Host "       Jika internal_users.yml belum dirotasi, autentikasi wazuh.manager/dashboard ke indexer bisa gagal (HTTP 401)." -ForegroundColor Yellow
+}
 
 # 3. Bersihkan network wazuh_net lama/yatim agar tidak memicu warning project mismatch
 $netInspect = Invoke-DockerQuiet @("network", "inspect", "wazuh_net")
@@ -122,7 +126,16 @@ docker compose --env-file "$EnvFile" -f "$ComposeFile" up -d
 $upExit = $LASTEXITCODE
 $ErrorActionPreference = $prevEap
 if ($upExit -ne 0) {
-    Write-Host "[ERROR] Stack Wazuh gagal start. Menampilkan log terakhir qshields-wazuh-certs & qshields-wazuh-indexer:" -ForegroundColor Red
+    Write-Host "[ERROR] Stack Wazuh gagal start. Menampilkan diagnosa terakhir qshields-wazuh-certs & qshields-wazuh-indexer:" -ForegroundColor Red
+    $idxHealthRes = Invoke-DockerQuiet @("inspect", "qshields-wazuh-indexer")
+    if ($idxHealthRes.ExitCode -eq 0 -and -not [string]::IsNullOrWhiteSpace($idxHealthRes.Output)) {
+        $idxObj = ($idxHealthRes.Output | ConvertFrom-Json)[0]
+        if ($idxObj.State.Health -and $idxObj.State.Health.Log -and $idxObj.State.Health.Log.Count -gt 0) {
+            $lastProbe = $idxObj.State.Health.Log[-1]
+            Write-Host "--- qshields-wazuh-indexer healthcheck terakhir (exit $($lastProbe.ExitCode)) ---" -ForegroundColor DarkYellow
+            Write-Host $lastProbe.Output
+        }
+    }
     $prevEap = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
     Write-Host "--- qshields-wazuh-certs ---" -ForegroundColor DarkYellow

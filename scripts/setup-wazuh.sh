@@ -67,6 +67,10 @@ for var_name in "${REQUIRED_VARS[@]}"; do
   fi
 done
 echo "[OK] Seluruh variabel wajib Wazuh pada .env valid."
+if [ "$(read_env_var "INDEXER_PASSWORD")" != "SecretPassword" ]; then
+  echo "[WARN] INDEXER_PASSWORD di .env berbeda dari default bawaan image Wazuh 4.9.2 ('SecretPassword')."
+  echo "       Pastikan internal_users.yml juga dirotasi atau gunakan 'SecretPassword' untuk fresh install."
+fi
 
 # 3. Bersihkan network wazuh_net yatim (misal dari project lama / docker network create manual) jika sedang tidak dipakai
 if docker network inspect wazuh_net >/dev/null 2>&1; then
@@ -99,7 +103,8 @@ fi
 # 5. Jalankan stack Wazuh (sertifikat TLS dibuat otomatis oleh service wazuh.certs bila belum ada)
 echo "[INFO] Menjalankan Docker Compose stack Wazuh (name: qshields-wazuh)..."
 if ! docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" up -d; then
-  echo "[ERROR] Stack Wazuh gagal start. Menampilkan log terakhir qshields-wazuh-indexer:" >&2
+  echo "[ERROR] Stack Wazuh gagal start. Menampilkan diagnosa terakhir qshields-wazuh-indexer:" >&2
+  docker inspect -f '{{if .State.Health}}{{range .State.Health.Log}}exit={{.ExitCode}} out={{.Output}}{{end}}{{end}}' qshields-wazuh-indexer >&2 || true
   docker logs --tail 60 qshields-wazuh-indexer >&2 || true
   exit 1
 fi
