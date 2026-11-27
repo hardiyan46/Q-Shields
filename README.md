@@ -52,11 +52,12 @@ docker compose --env-file .env -f docker-compose.app.yml up -d --build
 
 ## Pengujian Fresh Install dari Kondisi Bersih
 
-Untuk memastikan proses *fresh install* bekerja bersih dari awal:
+Jika Anda sebelumnya pernah menjalankan versi lama `.env` atau network `wazuh_net` manual, bersihkan stack lama sebelum menguji ulang:
 
 ```bash
 docker compose -f docker-compose.wazuh.yml down -v
-# Opsional: hapus ./wazuh/certs untuk menguji generate sertifikat TLS otomatis
-# Linux: rm -rf ./wazuh/certs/* && ./scripts/setup-wazuh.sh
-# Windows: Remove-Item .\wazuh\certs\* -Force; .\scripts\setup-wazuh.ps1
+docker network rm wazuh_net 2>/dev/null || true
+# Pastikan .env memakai INDEXER_PASSWORD=SecretPassword (bukan placeholder CHANGE_ME_*) untuk fresh install default
+# Linux:   rm -rf ./wazuh/certs/* && ./scripts/setup-wazuh.sh
+# Windows: Remove-Item .\wazuh\certs\* -Force -ErrorAction SilentlyContinue; .\scripts\setup-wazuh.ps1
 ```

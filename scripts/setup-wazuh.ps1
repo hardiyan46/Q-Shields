@@ -34,7 +34,7 @@ if (-not (Test-Path $EnvFile)) {
         exit 1
     }
     Copy-Item $EnvExample $EnvFile
-    Write-Host "[INFO] File .env dibuat dari .env.example. Silakan sesuaikan kredensial untuk lingkungan produksi." -ForegroundColor Yellow
+    Write-Host "[INFO] File .env dibuat dari .env.example." -ForegroundColor Yellow
 } else {
     Write-Host "[INFO] Menggunakan file .env yang sudah ada." -ForegroundColor Green
 }
@@ -60,10 +60,30 @@ foreach ($varName in $RequiredVars) {
         Write-Error "Variabel wajib '$varName' kosong atau belum didefinisikan di $EnvFile."
         exit 1
     }
+    if ($EnvMap[$varName].StartsWith("CHANGE_ME")) {
+        Write-Error "Variabel '$varName' di .env masih menggunakan placeholder ($($EnvMap[$varName])). Untuk fresh install Wazuh 4.9.2, gunakan default dari .env.example (mis. INDEXER_PASSWORD=SecretPassword)."
+        exit 1
+    }
 }
-Write-Host "[OK] Seluruh variabel wajib Wazuh pada .env terisi." -ForegroundColor Green
+Write-Host "[OK] Seluruh variabel wajib Wazuh pada .env valid." -ForegroundColor Green
 
-# 3. Atur vm.max_map_count=262144 di backend WSL2 Docker Desktop
+# 3. Bersihkan network wazuh_net lama/yatim agar tidak memicu warning project mismatch
+$netInspect = docker network inspect wazuh_net 2>$null
+if ($LASTEXITCODE -eq 0 -and $netInspect) {
+    $netProject = docker network inspect -f '{{index .Labels "com.docker.compose.project"}}' wazuh_net 2>$null
+    if ($netProject -ne "qshields-wazuh") {
+        $attachedCount = docker network inspect -f '{{len .Containers}}' wazuh_net 2>$null
+        if ($attachedCount -eq "0") {
+            Write-Host "[INFO] Menghapus network wazuh_net lama (project='$netProject') agar dibuat ulang bersih untuk 'qshields-wazuh'..." -ForegroundColor Yellow
+            docker network rm wazuh_net | Out-Null
+        } else {
+            Write-Host "[WARN] Network wazuh_net sudah ada (project='$netProject') dan sedang dipakai $attachedCount container." -ForegroundColor Yellow
+            Write-Host "       Jika ingin bersih penuh, jalankan 'docker compose -f docker-compose.app.yml down' terlebih dahulu." -ForegroundColor Yellow
+        }
+    }
+}
+
+# 4. Atur vm.max_map_count=262144 di backend WSL2 Docker Desktop
 Write-Host "[INFO] Mengatur vm.max_map_count=262144 di Docker Desktop (WSL2)..." -ForegroundColor Cyan
 wsl -d docker-desktop sysctl -w vm.max_map_count=262144
 if ($LASTEXITCODE -ne 0) {
@@ -71,15 +91,16 @@ if ($LASTEXITCODE -ne 0) {
     exit 1
 }
 
-# 4. Jalankan stack Wazuh (sertifikat TLS dibuat otomatis oleh service wazuh.certs bila belum ada)
+# 5. Jalankan stack Wazuh (sertifikat TLS dibuat otomatis oleh service wazuh.certs bila belum ada)
 Write-Host "[INFO] Menjalankan Docker Compose stack Wazuh (name: qshields-wazuh)..." -ForegroundColor Cyan
 docker compose --env-file "$EnvFile" -f "$ComposeFile" up -d
 if ($LASTEXITCODE -ne 0) {
-    Write-Error "Gagal menjalankan docker compose stack Wazuh."
+    Write-Host "[ERROR] Stack Wazuh gagal start. Menampilkan 60 baris log terakhir qshields-wazuh-indexer:" -ForegroundColor Red
+    docker logs --tail 60 qshields-wazuh-indexer 2>$null
     exit 1
 }
 
-# 5. Tunggu hingga seluruh service Wazuh berstatus healthy
+# 6. Tunggu hingga seluruh service Wazuh berstatus healthy
 $Services = @(
     "qshields-wazuh-indexer",
     "qshields-wazuh-manager",
@@ -124,6 +145,7 @@ while ($true) {
     if ($Elapsed -ge $TimeoutSeconds) {
         Write-Host "[ERROR] Timeout menunggu container Wazuh menjadi healthy setelah $TimeoutSeconds detik." -ForegroundColor Red
         docker compose --env-file "$EnvFile" -f "$ComposeFile" ps
+        docker logs --tail 60 qshields-wazuh-indexer 2>$null
         exit 1
     }
 

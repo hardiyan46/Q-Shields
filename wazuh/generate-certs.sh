@@ -13,6 +13,6 @@ if [ ! -f "${REPO_ROOT}/wazuh/certs/root-ca-manager.pem" ] && [ -f "${REPO_ROOT}
   cp "${REPO_ROOT}/wazuh/certs/root-ca.pem" "${REPO_ROOT}/wazuh/certs/root-ca-manager.pem"
 fi
 
-chown 0:1000 "${REPO_ROOT}/wazuh/certs/"*.pem "${REPO_ROOT}/wazuh/certs/"*.key 2>/dev/null || true
+chown 1000:1000 "${REPO_ROOT}/wazuh/certs/"*.pem "${REPO_ROOT}/wazuh/certs/"*.key 2>/dev/null || true
 chmod 0640 "${REPO_ROOT}/wazuh/certs/"*.pem "${REPO_ROOT}/wazuh/certs/"*.key 2>/dev/null || true
 echo "Sertifikat TLS Wazuh berhasil dibuat di ${REPO_ROOT}/wazuh/certs/"
