@@ -1,6 +1,10 @@
+name: qshields-wazuh-certs
+
 # ==============================================================================
-# Generator Sertifikat TLS Internal Wazuh Single-Node
-# Jalankan sekali sebelum `docker compose -f docker-compose.wazuh.yml up -d`:
+# Generator Sertifikat TLS Internal Wazuh Single-Node (Manual Standalone)
+# Catatan: `docker-compose.wazuh.yml` kini sudah menyertakan init service
+# `wazuh.certs` otomatis saat fresh install. File ini dipertahankan untuk
+# keperluan regenerasi manual jika ./wazuh/certs dihapus:
 #   docker compose -f docker-compose.wazuh-certs.yml run --rm generator
 # Hasil sertifikat disimpan di `./wazuh/certs/` (diabaikan oleh .gitignore).
 # ==============================================================================
